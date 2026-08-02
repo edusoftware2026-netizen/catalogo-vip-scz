@@ -1,0 +1,29 @@
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: catalogo-vip-scz
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: BOT_TOKEN
+        sync: false
+      - key: BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: CHANNEL_ID
+        sync: false
+      - key: ADMIN_TELEGRAM_IDS
+        sync: false
+      - key: ADMIN_SIGNING_SECRET
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: APP_BASE_URL
+        sync: false

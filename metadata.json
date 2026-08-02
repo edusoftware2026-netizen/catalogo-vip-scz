@@ -1,0 +1,6 @@
+{
+  "name": "Iam Dani Catálogo Santa Cruz",
+  "description": "Plataforma web privada y catálogo exclusivo de servicios legales en Santa Cruz, administrado mediante un bot de Telegram.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

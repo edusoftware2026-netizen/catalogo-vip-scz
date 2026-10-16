@@ -1,16 +1,1 @@
-node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
-!.env.example
-
-# Local-only scripts (Cloudflare tunnel, Windows batch)
-iniciar_cf_persistente.bat
-iniciar_node_persistente.bat
-iniciar_cloudflare.ps1
-tunel_oculto.vbs
-deploy_flyio.ps1
-url_publica.txt
+*.zip

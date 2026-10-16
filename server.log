@@ -1,0 +1,16 @@
+◇ injected env (0) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+[Iam Dani Catálogo] =============================================
+[Iam Dani Catálogo] 🌐 Tu catálogo local está en: http://localhost:3005
+[Iam Dani Catálogo]    (Abre http://localhost:3005 en tu navegador web)
+[Iam Dani Catálogo] =============================================
+[Telegram API] Warning: BOT_TOKEN is not configured. Method called: setChatMenuButton
+[Telegram API] Warning: BOT_TOKEN is not configured. Method called: setWebhook
+[Telegram Bot] Bot menu button updated: {
+  ok: false,
+  description: 'BOT_TOKEN is not configured in environment variables'
+}
+[Telegram Bot] Webhook registered: {
+  ok: false,
+  description: 'BOT_TOKEN is not configured in environment variables'
+}

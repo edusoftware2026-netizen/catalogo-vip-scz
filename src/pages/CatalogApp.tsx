@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Profile } from '../types';
 import { Header } from '../components/Header';
 import { ProfileCard } from '../components/ProfileCard';
-import { ProfileDetailModal } from '../components/ProfileDetailModal';
-import { RequestModal, TelegramUserContext } from '../components/RequestModal';
+import { ProfileDetailModal, TelegramUserContext } from '../components/ProfileDetailModal';
 import { AgeModal } from '../components/AgeModal';
 import { ShieldCheck, Heart, Send, Sparkles, AlertTriangle, UserCheck, X } from 'lucide-react';
 
@@ -16,9 +15,10 @@ export const CatalogApp: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('todos');
 
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
-  const [requestProfile, setRequestProfile] = useState<Profile | null>(null);
 
   const [botUsername, setBotUsername] = useState('CatalogoVIPSCZBot');
+  const [qrImageUrl, setQrImageUrl] = useState('');
+  const [adminContactUsername, setAdminContactUsername] = useState('danii001');
   const [pinnedText, setPinnedText] = useState('');
   const [pinnedActive, setPinnedActive] = useState(false);
 
@@ -95,6 +95,8 @@ export const CatalogApp: React.FC = () => {
       if (resInfo.ok) {
         const info = await resInfo.json();
         if (info.bot_username) setBotUsername(info.bot_username);
+        if (info.qr_image_url) setQrImageUrl(info.qr_image_url);
+        if (info.admin_contact_username) setAdminContactUsername(info.admin_contact_username);
         if (info.pinned_message_text !== undefined) setPinnedText(info.pinned_message_text);
         if (info.pinned_message_active !== undefined) setPinnedActive(Boolean(info.pinned_message_active));
       }
@@ -261,7 +263,7 @@ export const CatalogApp: React.FC = () => {
                   profile={p}
                   botUsername={botUsername}
                   onSelectProfile={(prof) => setSelectedProfile(prof)}
-                  onRequestAvailability={(prof) => setRequestProfile(prof)}
+                  onRequestAvailability={(prof) => setSelectedProfile(prof)}
                 />
               ))}
             </div>
@@ -291,20 +293,14 @@ export const CatalogApp: React.FC = () => {
         </div>
       </footer>
 
-      {/* Modal de Detalle */}
+      {/* Modal de Detalle Único con Fotos, QR, Comisión y Envío de Comprobante */}
       <ProfileDetailModal
         profile={selectedProfile}
         botUsername={botUsername}
-        onClose={() => setSelectedProfile(null)}
-        onRequestAvailability={(prof) => setRequestProfile(prof)}
-      />
-
-      {/* Modal de Solicitud de Método de Pago */}
-      <RequestModal
-        profile={requestProfile}
-        botUsername={botUsername}
+        qrImageUrl={qrImageUrl}
+        adminContactUsername={adminContactUsername}
         tgUserContext={tgUser}
-        onClose={() => setRequestProfile(null)}
+        onClose={() => setSelectedProfile(null)}
       />
 
     </div>

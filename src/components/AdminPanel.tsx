@@ -24,6 +24,8 @@ import {
   Globe,
   Webhook,
   MessageSquare,
+  Database,
+  Cloud,
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -61,7 +63,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [formData, setFormData] = useState<{
     name: string;
     age: number;
-    zone: string;
     description: string;
     rate_bs: number;
     commission_bs: number;
@@ -70,7 +71,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }>({
     name: '',
     age: 18,
-    zone: 'Equipetrol',
     description: '',
     rate_bs: 450,
     commission_bs: 50,
@@ -81,6 +81,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<FileList | null>(null);
   const [newBotUsername, setNewBotUsername] = useState(botUsername || '');
+  const [adminContactUsername, setAdminContactUsername] = useState('danii001');
   const [telegramOnlyMode, setTelegramOnlyMode] = useState(false);
   const [autoReplyDelay, setAutoReplyDelay] = useState('10');
   const [qrImageUrl, setQrImageUrl] = useState('');
@@ -90,11 +91,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [directTgPhotoUrl, setDirectTgPhotoUrl] = useState('');
   const [isClosingLogin, setIsClosingLogin] = useState(false);
   const [sessionClosedScreen, setSessionClosedScreen] = useState(false);
+  const [dbInfo, setDbInfo] = useState<{
+    type: string;
+    is_cloud: boolean;
+    label: string;
+    host: string;
+    status: string;
+    ping?: { success: boolean; latency_ms: number; timestamp: string };
+  } | null>(null);
+  const [checkingDb, setCheckingDb] = useState(false);
 
-  // Parámetros Dinámicos Globales (Precios, Comisión, Estados)
-  const [defaultRateBs, setDefaultRateBs] = useState<number>(450);
-  const [defaultCommissionBs, setDefaultCommissionBs] = useState<number>(50);
-  const [defaultStatus, setDefaultStatus] = useState<ProfileStatus>('borrador');
+
 
   // Reply state for customer requests
   const [replyingRequestId, setReplyingRequestId] = useState<string | null>(null);
@@ -237,14 +244,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
       if (resI.ok) {
         const infoData = await resI.json();
+        if (infoData.database) setDbInfo(infoData.database);
         if (infoData.telegram_only_access !== undefined) setTelegramOnlyMode(Boolean(infoData.telegram_only_access));
         if (infoData.auto_reply_delay_minutes !== undefined) setAutoReplyDelay(String(infoData.auto_reply_delay_minutes));
         if (infoData.qr_image_url !== undefined) setQrImageUrl(infoData.qr_image_url);
+        if (infoData.admin_contact_username) setAdminContactUsername(infoData.admin_contact_username);
         if (infoData.pinned_message_text !== undefined) setPinnedMessageText(infoData.pinned_message_text);
         if (infoData.pinned_message_active !== undefined) setPinnedMessageActive(Boolean(infoData.pinned_message_active));
-        if (infoData.default_rate_bs !== undefined) setDefaultRateBs(Number(infoData.default_rate_bs));
-        if (infoData.default_commission_bs !== undefined) setDefaultCommissionBs(Number(infoData.default_commission_bs));
-        if (infoData.default_status !== undefined) setDefaultStatus(infoData.default_status as ProfileStatus);
       }
       if (resComm && resComm.ok) {
         setCommissionLogs(await resComm.json());
@@ -253,6 +259,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setMessage({ type: 'error', text: 'Error al cargar datos administrativos' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePingDatabase = async () => {
+    setCheckingDb(true);
+    try {
+      const res = await fetch('/api/admin/db/status', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDbInfo(data);
+        setMessage({
+          type: 'success',
+          text: `Base de datos ${data.label} (${data.host}) verificada con éxito (${data.ping?.latency_ms ?? 0}ms)`
+        });
+      } else {
+        setMessage({ type: 'error', text: 'Error al consultar estado de la base de datos' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Error de conexión al verificar base de datos' });
+    } finally {
+      setCheckingDb(false);
     }
   };
 
@@ -344,7 +373,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         }
         setMessage({ type: 'success', text: `Perfil ${isEdit ? 'actualizado' : 'creado'} y fotografías vinculadas con éxito.` });
         setEditingProfile(null);
-        setFormData({ name: '', age: 18, zone: 'Equipetrol', description: '', rate_bs: 450, commission_bs: 50, status: 'borrador', priority_order: 0 });
+        setFormData({ name: '', age: 18, description: '', rate_bs: 450, commission_bs: 50, status: 'borrador', priority_order: 0 });
         fetchData();
         setActiveTab('profiles');
       } else {
@@ -533,22 +562,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           bot_username: newBotUsername,
+          admin_contact_username: adminContactUsername,
           telegram_only_access: onlyMode,
-          auto_reply_delay_minutes: autoReplyDelay,
-          default_rate_bs: defaultRateBs,
-          default_commission_bs: defaultCommissionBs,
-          default_status: defaultStatus
+          auto_reply_delay_minutes: autoReplyDelay
         })
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setMessage({ type: 'success', text: 'Parámetros guardados y sincronizados correctamente.' });
+        setMessage({ type: 'success', text: 'Ajustes guardados y sincronizados correctamente.' });
         if (data.bot_username) setNewBotUsername(data.bot_username);
+        if (data.admin_contact_username) setAdminContactUsername(data.admin_contact_username);
         if (data.telegram_only_access !== undefined) setTelegramOnlyMode(data.telegram_only_access);
         if (data.auto_reply_delay_minutes !== undefined) setAutoReplyDelay(String(data.auto_reply_delay_minutes));
-        if (data.default_rate_bs !== undefined) setDefaultRateBs(Number(data.default_rate_bs));
-        if (data.default_commission_bs !== undefined) setDefaultCommissionBs(Number(data.default_commission_bs));
-        if (data.default_status !== undefined) setDefaultStatus(data.default_status as ProfileStatus);
         fetchData();
       } else {
         setMessage({ type: 'error', text: data.error || 'Error al guardar configuración' });
@@ -565,11 +590,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setFormData({
       name: '',
       age: 18,
-      zone: 'Equipetrol',
       description: '',
-      rate_bs: defaultRateBs,
-      commission_bs: defaultCommissionBs,
-      status: defaultStatus,
+      rate_bs: 450,
+      commission_bs: 50,
+      status: 'borrador',
       priority_order: 0
     });
     setActiveTab('new');
@@ -721,9 +745,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 <h2 className="text-lg font-bold text-white tracking-tight font-serif">
                   Panel Administrativo — Iam Dani
                 </h2>
-                <p className="text-xs text-zinc-400">
-                  Canal Telegram: <span className="text-amber-400 font-mono">{channelId}</span>
-                </p>
+                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                  <span className="text-xs text-zinc-400">
+                    Canal: <span className="text-amber-400 font-mono">{channelId}</span>
+                  </span>
+                  <span className="text-zinc-600">·</span>
+                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    dbInfo?.is_cloud
+                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                      : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                  }`}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <Database className="w-3 h-3 text-emerald-400" />
+                    <span>{dbInfo?.label || 'Turso Cloud'}</span>
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -865,8 +901,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               </select>
                             </div>
                             <div className="flex items-center gap-2 mt-1 text-zinc-400">
-                              <span>📍 {p.zone}</span>
-                              <span>·</span>
                               <span className="text-amber-400 font-bold">Tarifa: Bs. {p.rate_bs}</span>
                               <span>·</span>
                               <span className="text-emerald-400 font-bold">Comisión: Bs. {p.commission_bs}</span>
@@ -879,7 +913,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               onClick={() => {
                                 setEditingProfile(p);
                                 setFormData({
-                                  name: p.name, age: p.age, zone: p.zone,
+                                  name: p.name, age: p.age,
                                   description: p.description, rate_bs: p.rate_bs,
                                   commission_bs: p.commission_bs, status: p.status,
                                   priority_order: p.priority_order || 0
@@ -893,10 +927,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                             <button
                               onClick={() => handleSyncChannel(p.id)}
-                              className="px-2.5 py-1 rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
-                              title="Publicar / Sincronizar en Canal Telegram"
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+                                p.telegram_message_id
+                                  ? 'bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 border border-blue-500/30'
+                                  : 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30 border border-emerald-500/30'
+                              }`}
+                              title="Publicar post con fotografía y botón 'Ver Catálogo VIP' en el canal de Telegram"
                             >
-                              <Send className="w-3 h-3" /> Sincronizar
+                              <Send className="w-3 h-3" />
+                              <span>{p.telegram_message_id ? 'Actualizar Post' : 'Publicar en Canal'}</span>
                             </button>
 
                             <button
@@ -945,17 +984,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                       />
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-zinc-400 mb-1 font-semibold">Zona / Barrio</label>
-                    <input
-                      type="text"
-                      value={formData.zone}
-                      onChange={(e) => setFormData({ ...formData, zone: e.target.value })}
-                      placeholder="Ej: Equipetrol, Radial 27, Centro..."
-                      className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 transition-colors"
-                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -1114,6 +1142,59 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             {/* TAB: TELEGRAM & SETTINGS */}
             {activeTab === 'telegram' && (
               <div className="space-y-6 text-xs">
+
+                {/* BASE DE DATOS TURSO CLOUD */}
+                <div className="p-5 bg-linear-to-br from-emerald-500/10 via-zinc-950 to-zinc-950 border-2 border-emerald-500/30 rounded-2xl space-y-4 shadow-lg shadow-emerald-500/5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                        <Database className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-extrabold text-white flex items-center gap-2">
+                          Base de Datos Turso Cloud (LibSQL)
+                        </h4>
+                        <p className="text-[11px] text-zinc-400">Almacenamiento persistente en la nube y sincronización en tiempo real</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 border border-emerald-500/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        {dbInfo?.is_cloud ? 'Turso Cloud Conectado' : 'SQLite Local Activo'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handlePingDatabase}
+                        disabled={checkingDb}
+                        className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-xl border border-zinc-700 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${checkingDb ? 'animate-spin text-emerald-400' : ''}`} />
+                        <span>Probar Conexión</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl space-y-1">
+                      <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">Host / Endpoint</span>
+                      <p className="text-xs font-mono text-emerald-300 font-bold truncate">
+                        {dbInfo?.host || 'catalogo-vip-scz-edusoftware2026-netizen.aws-sa-east-1.turso.io'}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl space-y-1">
+                      <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">Perfiles en Base de Datos</span>
+                      <p className="text-xs font-mono text-white font-bold">
+                        {profiles.length} modelos activas
+                      </p>
+                    </div>
+                    <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl space-y-1">
+                      <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">Estado / Latencia</span>
+                      <p className="text-xs font-mono text-amber-400 font-bold">
+                        {dbInfo?.ping?.latency_ms !== undefined ? `${dbInfo.ping.latency_ms} ms de respuesta` : '🟢 En Línea'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
                 {/* QR COMISIÓN */}
                 <div className="p-5 bg-linear-to-br from-amber-500/10 via-zinc-950 to-zinc-950 border-2 border-amber-500/40 rounded-2xl space-y-4 shadow-lg shadow-amber-500/5">
@@ -1291,6 +1372,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 </form>
 
+                {/* ADMIN CONTACT USERNAME */}
+                <form onSubmit={handleSaveSettings} className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-3">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-emerald-400" /> Usuario Oficial de la Administradora (Telegram)
+                  </h4>
+                  <p className="text-zinc-400">
+                    Username de la Administradora (por defecto <code className="text-amber-400 font-mono font-bold">danii001</code>). El botón de comprobantes de pago y consultas del catálogo conectará directamente a este chat.
+                  </p>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <span className="absolute left-3 top-2.5 text-zinc-500 font-bold text-xs">@</span>
+                      <input
+                        type="text"
+                        value={adminContactUsername.replace(/^@/, '')}
+                        onChange={(e) => setAdminContactUsername(e.target.value)}
+                        placeholder="danii001"
+                        className="w-full pl-7 pr-3 py-2 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:border-amber-500 transition-colors"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="py-2 px-4 bg-emerald-500 hover:bg-emerald-600 text-zinc-950 font-bold rounded-xl transition-all cursor-pointer shrink-0 disabled:opacity-60"
+                    >
+                      Guardar
+                    </button>
+                  </div>
+                </form>
+
                 {/* AUTO REPLY DELAY */}
                 <form onSubmit={handleSaveSettings} className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-3">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
@@ -1385,6 +1495,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               <p className="text-zinc-500 text-[11px] bg-zinc-900 px-2 py-1 rounded-lg">
                                 "{reqItem.notes}"
                               </p>
+                            )}
+                            {reqItem.receipt_url && (
+                              <div className="mt-2 flex items-center gap-2 bg-zinc-900/90 p-2 rounded-xl border border-emerald-500/30">
+                                <a href={reqItem.receipt_url} target="_blank" rel="noopener noreferrer" className="block shrink-0">
+                                  <img src={reqItem.receipt_url} alt="Comprobante" className="w-12 h-12 object-cover rounded-lg border border-zinc-700 hover:scale-105 transition-transform" />
+                                </a>
+                                <div className="text-xs">
+                                  <span className="text-emerald-400 font-bold block">📸 Comprobante de pago</span>
+                                  <a href={reqItem.receipt_url} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline text-[11px]">
+                                    Ver imagen completa ↗
+                                  </a>
+                                </div>
+                              </div>
                             )}
                             <p className="text-zinc-500 text-[11px]">
                               {new Date(reqItem.created_at).toLocaleString('es-BO')}
@@ -1525,7 +1648,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             <tr key={item.id} className="hover:bg-zinc-900/30 transition-colors">
                               <td className="p-3 font-mono text-amber-400 font-bold">{item.telegram_user}</td>
                               <td className="p-3 text-white font-medium">{item.profile_name}</td>
-                              <td className="p-3 text-emerald-400 font-bold">Bs. {item.amount_bs || defaultCommissionBs}</td>
+                              <td className="p-3 text-emerald-400 font-bold">Bs. {item.amount_bs || 50}</td>
                               <td className="p-3 text-zinc-400">{new Date(item.paid_at).toLocaleString('es-BO')}</td>
                               <td className="p-3">
                                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-extrabold flex items-center gap-1 w-fit">

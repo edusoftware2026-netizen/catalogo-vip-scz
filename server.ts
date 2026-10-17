@@ -7,7 +7,7 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { router as apiRouter } from './src/server/routes.js';
 import { getDb } from './src/server/db.js';
-import { updateBotMenuButton, registerBotWebhook } from './src/server/telegram.js';
+import { updateBotMenuButton, registerBotCommands, registerBotWebhook } from './src/server/telegram.js';
 
 async function startServer() {
   // Ensure DB initialized
@@ -62,6 +62,11 @@ async function startServer() {
       console.log('[Telegram Bot] Bot menu button updated:', res);
     }).catch(err => {
       console.error('[Telegram Bot] Error updating menu button:', err);
+    });
+    registerBotCommands().then(res => {
+      console.log('[Telegram Bot] Bot commands registered:', res);
+    }).catch(err => {
+      console.error('[Telegram Bot] Error registering bot commands:', err);
     });
     registerBotWebhook().then(res => {
       console.log('[Telegram Bot] Webhook registered:', res);

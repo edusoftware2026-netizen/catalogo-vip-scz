@@ -18,7 +18,9 @@ import {
   getSystemSetting,
   saveSystemSetting,
   addCommissionLog,
-  getCommissionLogs
+  getCommissionLogs,
+  getDbInfo,
+  pingDb
 } from './db.js';
 import {
   processTelegramUpdate,
@@ -28,7 +30,9 @@ import {
   getBotConfig,
   sendMessage,
   sendPhotoToUser,
-  getTelegramFileUrl
+  getTelegramFileUrl,
+  updateBotMenuButton,
+  registerBotCommands
 } from './telegram.js';
 
 export const router = express.Router();
@@ -114,9 +118,6 @@ router.get('/info', (req: Request, res: Response) => {
   const tgVal = getSystemSetting('telegram_only_access');
   const telegramOnly = tgVal === null ? true : (tgVal === 'true');
   const autoReplyDelay = getSystemSetting('auto_reply_delay_minutes') || '10';
-  const defaultRate = Number(getSystemSetting('default_rate_bs')) || 450;
-  const defaultCommission = Number(getSystemSetting('default_commission_bs')) || 50;
-  const defaultStatus = getSystemSetting('default_status') || 'borrador';
 
   res.json({
     app_name: 'Iam Dani Catálogo',
@@ -126,11 +127,10 @@ router.get('/info', (req: Request, res: Response) => {
     telegram_only_access: telegramOnly,
     auto_reply_delay_minutes: autoReplyDelay,
     qr_image_url: getSystemSetting('qr_image_url') || '',
+    admin_contact_username: getSystemSetting('admin_contact_username') || 'danii001',
     pinned_message_text: getSystemSetting('pinned_message_text') || '',
     pinned_message_active: getSystemSetting('pinned_message_active') === 'true',
-    default_rate_bs: defaultRate,
-    default_commission_bs: defaultCommission,
-    default_status: defaultStatus,
+    database: getDbInfo(),
     legal_notice: 'Catálogo privado exclusivo para mayores de 18 años.'
   });
 });
@@ -169,13 +169,16 @@ export function scheduleAutoReply(requestId: string, tgUserId: string, clientNam
       const checkReq = await getCustomerRequestById(requestId);
       if (checkReq && checkReq.status === 'pendiente') {
         const qrUrl = getSystemSetting('qr_image_url');
-        const autoReplyText = `✨ *Iam Dani Catálogo Santa Cruz* ✨\n\n¡Hola ${clientName || 'Estimado/a'}!\n\nNuestra Administradora ha revisado tu consulta para *${profileName}*.\n\n${qrUrl ? '📲 *Te adjuntamos nuestro QR de COMISIÓN oficial.* Por favor, realiza el pago y envía tu comprobante o captura **directamente por mensaje privado a la Administradora** para confirmar tu cita prioritaria.' : 'La Admin se comunicará contigo por mensaje privado en cuanto esté disponible.'}\n\n🔒 Trato 100% Confidencial y Discreto.`;
+        const profile = await getProfileById(checkReq.profile_id);
+        const commissionAmount = profile?.commission_bs || 0;
+
+        const autoReplyText = `✨ *Iam Dani Catálogo Santa Cruz* ✨\n\n¡Hola ${clientName || 'Estimado/a'}!\n\nTu solicitud para consultar disponibilidad de *${profileName}* ha sido procesada.\n\n🏷️ *MONTO DE COMISIÓN A TRANSFERIR*: *Bs. ${commissionAmount}*\n\n${qrUrl ? '📲 *Te adjuntamos el código QR oficial de pago.* Por favor, realiza la transferencia de *Bs. ' + commissionAmount + '* y envía tu comprobante / captura directamente al chat privado de la Administradora para coordinar tu atención prioritaria.' : 'Por favor comunícate directamente con la Administradora para coordinar el método de pago.'}\n\n🔒 Máxima discreción y confidencialidad garantizada.`;
         if (qrUrl) {
           await sendPhotoToUser(tgUserId, qrUrl, autoReplyText);
         } else {
           await sendMessage(tgUserId, autoReplyText);
         }
-        console.log(`[AutoReply] Respuesta automática enviada tras ${delayMinutes} min a ${tgUserId} (Solicitud #${requestId})`);
+        console.log(`[AutoReply] QR y respuesta con comisión de Bs. ${commissionAmount} enviada a ${tgUserId} (Solicitud #${requestId})`);
       }
     } catch (e) {
       console.error('[AutoReply] Error en respuesta automática del bot:', e);
@@ -183,10 +186,15 @@ export function scheduleAutoReply(requestId: string, tgUserId: string, clientNam
   }, delayMs);
 }
 
-// POST Customer Availability Request
-router.post('/requests', async (req: Request, res: Response) => {
+// POST Customer Availability Request (with optional receipt photo)
+router.post('/requests', upload.single('receipt'), async (req: Request, res: Response) => {
   try {
     const { profile_id, client_name, client_telegram, tg_user_id, notes } = req.body;
+    let receipt_url = req.body.receipt_url;
+
+    if (req.file) {
+      receipt_url = `/uploads/${req.file.filename}`;
+    }
 
     if (!profile_id) {
       res.status(400).json({ error: 'El ID del perfil es requerido' });
@@ -206,35 +214,43 @@ router.post('/requests', async (req: Request, res: Response) => {
       telegram_first_name: client_name || 'Cliente Telegram/Web',
       telegram_username: client_telegram ? client_telegram.replace('@', '') : undefined,
       notes: notes || 'Solicitud de disponibilidad enviada desde el catálogo VIP',
+      receipt_url: receipt_url || undefined,
       status: 'pendiente'
     });
 
+    const config = getBotConfig();
+    const adminContactUsername = getSystemSetting('admin_contact_username') || 'danii001';
+
     // Send immediate automated chat to user's Telegram if user_id is present
     if (tg_user_id) {
-      const userConfirmText = `✨ *Iam Dani Catálogo* ✨\n\n¡Hola ${client_name || 'Estimado/a'}!\n\nHemos recibido tu solicitud de atención para *${profile.name}*.\n\nLa Administradora procesará tu consulta de forma confidencial y te responderá directamente a este chat en breve.`;
+      const userConfirmText = `✨ *Iam Dani Catálogo* ✨\n\n¡Hola ${client_name || 'Estimado/a'}!\n\nHemos recibido tu comprobante de comisión y solicitud para *${profile.name}*.\n\nLa Administradora (@${adminContactUsername}) lo verificará de inmediato y te contactará en privado.`;
       await sendMessage(String(tg_user_id), userConfirmText);
       scheduleAutoReply(request.id, String(tg_user_id), client_name || 'Estimado/a', profile.name);
     }
 
-    // Send alert to Telegram Admins
-    const { adminIds } = getBotConfig();
-    const defaultComm = Number(getSystemSetting('default_commission_bs')) || 50;
+    // Send alert to Telegram Admins (with receipt photo if attached)
     const adminNotice = `
-🔔 *NUEVA SOLICITUD DE DISPONIBILIDAD* 🔔
+🔔 *NUEVA SOLICITUD Y COMPROBANTE DE COMISIÓN* 🔔
 
-👤 *Cliente*: ${client_name || 'Anónimo'} ${client_telegram ? '(@' + client_telegram + ')' : ''}
+👤 *Cliente*: ${client_name || 'Anónimo'} ${client_telegram ? '(@' + client_telegram.replace('@', '') + ')' : ''}
 🆔 *Telegram ID*: \`${tg_user_id || 'No detectado'}\`
-👠 *Perfil*: ${profile.name} (TARIFA SERVICIO: Bs. ${profile.rate_bs} | COMISIÓN: Bs. ${profile.commission_bs || defaultComm})
-📍 *Zona*: ${profile.zone}
-📝 *Notas*: ${notes || 'Sin observaciones'}
+👠 *Perfil*: ${profile.name} (TARIFA SERVICIO: Bs. ${profile.rate_bs})
+🏷️ *Comisión de Reserva*: *Bs. ${profile.commission_bs}*
+${receipt_url ? '📸 *Comprobante de Pago Adjuntado*: Sí' : '📸 *Comprobante*: No adjuntado'}
+📝 *Mensaje del Cliente*: ${notes || 'Sin observaciones'}
 📅 *Fecha*: ${new Date().toLocaleString()}
 
-💬 _Para responder al cliente enviándole el QR de COMISIÓN adjunto, escribe en este chat:_\n\`/qr ${tg_user_id || 'ID_CLIENTE'}\`
+💬 _Para responder al cliente enviándole el QR de COMISIÓN, escribe:_\n\`/qr ${tg_user_id || 'ID_CLIENTE'}\`
     `;
 
-    for (const adminId of adminIds) {
+    for (const adminId of config.adminIds) {
       if (adminId) {
-        await sendMessage(adminId, adminNotice);
+        if (receipt_url) {
+          const fullReceiptUrl = receipt_url.startsWith('http') ? receipt_url : `${config.baseUrl}${receipt_url}`;
+          await sendPhotoToUser(adminId, fullReceiptUrl, adminNotice);
+        } else {
+          await sendMessage(adminId, adminNotice);
+        }
       }
     }
 
@@ -242,7 +258,8 @@ router.post('/requests', async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: 'Solicitud enviada con éxito. La Administradora responderá a la brevedad por privado.',
+      message: 'Comprobante y solicitud enviados exitosamente a la Administradora.',
+      admin_contact_username: adminContactUsername,
       request
     });
   } catch (err: any) {
@@ -324,7 +341,7 @@ router.get('/admin/profiles', requireAdminAuth, async (req: Request, res: Respon
 // POST Create Profile from Web Admin Panel
 router.post('/admin/profiles', requireAdminAuth, async (req: Request, res: Response) => {
   try {
-    const { name, age, zone, description, rate_bs, commission_bs, photos, status, priority_order } = req.body;
+    const { name, age, description, rate_bs, commission_bs, photos, status, priority_order } = req.body;
 
     if (!name || !age || age < 18) {
       res.status(400).json({ error: 'El nombre es obligatorio y la edad debe ser igual o mayor a 18 años.' });
@@ -336,7 +353,6 @@ router.post('/admin/profiles', requireAdminAuth, async (req: Request, res: Respo
       id: newId,
       name,
       age: Number(age),
-      zone: zone || 'Santa Cruz',
       description: description || '',
       rate_bs: Number(rate_bs) || 0,
       commission_bs: Number(commission_bs) || 0,
@@ -370,7 +386,7 @@ router.put('/admin/profiles/:id', requireAdminAuth, async (req: Request, res: Re
       return;
     }
 
-    const { name, age, zone, description, rate_bs, commission_bs, photos, status, priority_order } = req.body;
+    const { name, age, description, rate_bs, commission_bs, photos, status, priority_order } = req.body;
 
     if (age !== undefined && Number(age) < 18) {
       res.status(400).json({ error: 'La edad debe ser mayor o igual a 18 años.' });
@@ -381,7 +397,6 @@ router.put('/admin/profiles/:id', requireAdminAuth, async (req: Request, res: Re
       id: profileId,
       name: name ?? existing.name,
       age: age !== undefined ? Number(age) : existing.age,
-      zone: zone ?? existing.zone,
       description: description ?? existing.description,
       rate_bs: rate_bs !== undefined ? Number(rate_bs) : existing.rate_bs,
       commission_bs: commission_bs !== undefined ? Number(commission_bs) : existing.commission_bs,
@@ -549,7 +564,10 @@ router.post('/admin/requests/:id/reply', requireAdminAuth, async (req: Request, 
 
     if (targetUserId) {
       const qrUrl = getSystemSetting('qr_image_url');
-      const msgText = `✨ *RESPUESTA DE LA ADMINISTRADORA* ✨\n\n📌 *Modelo Consultada*: ${request.profile_name}\n\n💬 ${reply_message || 'Hola, tu solicitud ha sido procesada.'}\n\n📲 *Por favor, realiza el pago de la COMISIÓN y envía tu comprobante o captura directamente al privado de la Administradora.* ¡Confidencialidad garantizada!\n\n*Estado de la Solicitud*: ${newStatus.toUpperCase()}`;
+      const profile = await getProfileById(request.profile_id);
+      const commissionAmount = profile?.commission_bs || 0;
+
+      const msgText = `✨ *RESPUESTA DE LA ADMINISTRADORA* ✨\n\n📌 *Modelo*: ${request.profile_name}\n🏷️ *Monto de Comisión a transferir*: *Bs. ${commissionAmount}*\n\n💬 ${reply_message || 'Hola, tu solicitud ha sido confirmada.'}\n\n📲 *Por favor, realiza el pago mediante el QR oficial adjunto y envía tu comprobante o captura directamente al privado de la Administradora.* ¡Confidencialidad garantizada!\n\n*Estado de la Solicitud*: ${newStatus.toUpperCase()}`;
       let sent;
       if (qrUrl) {
         sent = await sendPhotoToUser(targetUserId, qrUrl, msgText);
@@ -609,7 +627,9 @@ router.post('/admin/webhook/setup', requireAdminAuth, async (req: Request, res: 
       })
     });
     const result = await response.json();
-    res.json({ webhook_url: webhookUrl, telegram_response: result });
+    await updateBotMenuButton();
+    await registerBotCommands();
+    res.json({ webhook_url: webhookUrl, telegram_response: result, menu_button: 'updated', commands: 'registered' });
   } catch (err: any) {
     res.status(500).json({ error: 'Error al registrar webhook', details: err?.message });
   }
@@ -620,16 +640,18 @@ router.post('/admin/settings', requireAdminAuth, async (req: Request, res: Respo
   try {
     const {
       bot_username,
+      admin_contact_username,
       telegram_only_access,
-      auto_reply_delay_minutes,
-      default_rate_bs,
-      default_commission_bs,
-      default_status
+      auto_reply_delay_minutes
     } = req.body;
 
     if (bot_username !== undefined) {
       const cleanUsername = String(bot_username).replace(/^@/, '').trim();
       saveSystemSetting('bot_username', cleanUsername);
+    }
+    if (admin_contact_username !== undefined) {
+      const cleanAdmin = String(admin_contact_username).replace(/^@/, '').trim();
+      saveSystemSetting('admin_contact_username', cleanAdmin);
     }
     if (telegram_only_access !== undefined) {
       saveSystemSetting('telegram_only_access', telegram_only_access ? 'true' : 'false');
@@ -637,34 +659,20 @@ router.post('/admin/settings', requireAdminAuth, async (req: Request, res: Respo
     if (auto_reply_delay_minutes !== undefined) {
       saveSystemSetting('auto_reply_delay_minutes', String(auto_reply_delay_minutes));
     }
-    if (default_rate_bs !== undefined) {
-      saveSystemSetting('default_rate_bs', String(default_rate_bs));
-    }
-    if (default_commission_bs !== undefined) {
-      saveSystemSetting('default_commission_bs', String(default_commission_bs));
-    }
-    if (default_status !== undefined) {
-      saveSystemSetting('default_status', String(default_status));
-    }
 
     const adminId = (req as any).adminUserId || 'Admin Web';
-    await addAuditLog('UPDATE_SETTINGS', adminId, 'Parámetros del sistema y bot actualizados');
+    await addAuditLog('UPDATE_SETTINGS', adminId, 'Ajustes de Telegram y bot actualizados');
     const updatedConfig = getBotConfig();
     const isTelegramOnly = getSystemSetting('telegram_only_access') === 'true';
     const autoReplyDelay = getSystemSetting('auto_reply_delay_minutes') || '10';
-    const defaultRate = Number(getSystemSetting('default_rate_bs')) || 450;
-    const defaultComm = Number(getSystemSetting('default_commission_bs')) || 50;
-    const defaultSt = getSystemSetting('default_status') || 'borrador';
 
     res.json({
       success: true,
       bot_username: updatedConfig.username,
+      admin_contact_username: getSystemSetting('admin_contact_username') || 'danii001',
       telegram_only_access: isTelegramOnly,
       auto_reply_delay_minutes: autoReplyDelay,
-      qr_image_url: getSystemSetting('qr_image_url') || '',
-      default_rate_bs: defaultRate,
-      default_commission_bs: defaultComm,
-      default_status: defaultSt
+      qr_image_url: getSystemSetting('qr_image_url') || ''
     });
   } catch (err: any) {
     res.status(500).json({ error: 'Error al guardar configuración' });
@@ -729,8 +737,7 @@ router.post('/admin/requests/:id/pay', requireAdminAuth, async (req: Request, re
       : `${request.telegram_first_name || 'Anónimo'} (ID: ${request.telegram_user_id || 'N/A'})`;
 
     const profile = await getProfileById(request.profile_id);
-    const defaultComm = Number(getSystemSetting('default_commission_bs')) || 50;
-    const amount = profile?.commission_bs || defaultComm;
+    const amount = profile?.commission_bs || 0;
 
     const log = await addCommissionLog(tgUser, request.profile_name, amount, requestId);
 
@@ -748,3 +755,22 @@ router.post('/admin/requests/:id/pay', requireAdminAuth, async (req: Request, re
     res.status(500).json({ error: 'Error al marcar comisión como pagada' });
   }
 });
+
+// GET Database Status & Ping (Turso Cloud vs SQLite)
+router.get('/admin/db/status', requireAdminAuth, async (req: Request, res: Response) => {
+  try {
+    const info = getDbInfo();
+    const ping = await pingDb();
+    res.json({
+      ...info,
+      ping
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      ...getDbInfo(),
+      error: 'Error al consultar la base de datos',
+      details: err?.message
+    });
+  }
+});
+

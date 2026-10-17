@@ -4,6 +4,13 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
@@ -21,67 +28,76 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// server.ts
-var import_dotenv2 = __toESM(require("dotenv"), 1);
-var import_express2 = __toESM(require("express"), 1);
-var import_cors = __toESM(require("cors"), 1);
-var import_path4 = __toESM(require("path"), 1);
-var import_fs4 = __toESM(require("fs"), 1);
-var import_vite = require("vite");
-
-// src/server/routes.ts
-var import_express = __toESM(require("express"), 1);
-var import_multer = __toESM(require("multer"), 1);
-var import_path3 = __toESM(require("path"), 1);
-var import_fs3 = __toESM(require("fs"), 1);
-
 // src/server/db.ts
-var import_sql = __toESM(require("sql.js"), 1);
-var import_fs = __toESM(require("fs"), 1);
-var import_path = __toESM(require("path"), 1);
-var DATA_DIR = import_path.default.join(process.cwd(), "data");
-var DB_FILE = import_path.default.join(DATA_DIR, "catalogo.sqlite");
-var db = null;
+var db_exports = {};
+__export(db_exports, {
+  addAuditLog: () => addAuditLog,
+  addCommissionLog: () => addCommissionLog,
+  addSyncError: () => addSyncError,
+  clearConversationState: () => clearConversationState,
+  createCustomerRequest: () => createCustomerRequest,
+  deleteProfile: () => deleteProfile,
+  getAllProfiles: () => getAllProfiles,
+  getAuditLogs: () => getAuditLogs,
+  getCommissionLogs: () => getCommissionLogs,
+  getConversationState: () => getConversationState,
+  getCustomerRequestById: () => getCustomerRequestById,
+  getCustomerRequests: () => getCustomerRequests,
+  getDb: () => getDb,
+  getDbInfo: () => getDbInfo,
+  getProfileById: () => getProfileById,
+  getPublicProfiles: () => getPublicProfiles,
+  getSyncErrors: () => getSyncErrors,
+  getSystemSetting: () => getSystemSetting,
+  pingDb: () => pingDb,
+  saveProfile: () => saveProfile,
+  saveSystemSetting: () => saveSystemSetting,
+  setConversationState: () => setConversationState,
+  updateCustomerRequestStatus: () => updateCustomerRequestStatus
+});
 async function getDb() {
-  if (db) return db;
-  if (!import_fs.default.existsSync(DATA_DIR)) {
-    import_fs.default.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  const SQL = await (0, import_sql.default)();
-  if (import_fs.default.existsSync(DB_FILE)) {
-    const filebuffer = import_fs.default.readFileSync(DB_FILE);
-    db = new SQL.Database(filebuffer);
+  if (client) return client;
+  const tursoUrl = process.env.TURSO_DATABASE_URL;
+  const tursoAuthToken = process.env.TURSO_AUTH_TOKEN;
+  if (tursoUrl) {
+    console.log(`[Turso DB] Conectando a Turso Cloud Database: ${tursoUrl.replace(/\/\/[^@]*@/, "//***@")}`);
+    client = (0, import_client.createClient)({
+      url: tursoUrl,
+      authToken: tursoAuthToken
+    });
   } else {
-    db = new SQL.Database();
+    if (!import_fs.default.existsSync(DATA_DIR)) {
+      import_fs.default.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    console.log(`[Local SQLite DB] Usando archivo local: ${DB_FILE}`);
+    client = (0, import_client.createClient)({
+      url: `file:${DB_FILE}`
+    });
   }
-  initTables(db);
-  seedInitialData(db);
-  ensureDefaultSettings(db);
-  saveDb();
-  return db;
+  await initTables(client);
+  await seedInitialData(client);
+  await loadSettingsCache(client);
+  return client;
 }
-function ensureDefaultSettings(database) {
-  database.run(`INSERT OR IGNORE INTO system_settings (key, value) VALUES ('telegram_only_access', 'true')`);
-  database.run(`INSERT OR IGNORE INTO system_settings (key, value) VALUES ('auto_reply_delay_minutes', '10')`);
-  database.run(`UPDATE system_settings SET value = 'CatalogoVIPSCZBot' WHERE key = 'bot_username' AND value = 'catalogovipscz'`);
-}
-function saveDb() {
-  if (!db) return;
+async function loadSettingsCache(c) {
   try {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    import_fs.default.writeFileSync(DB_FILE, buffer);
+    const res = await c.execute("SELECT key, value FROM system_settings");
+    settingsCache.clear();
+    for (const row of res.rows) {
+      if (row.key && row.value !== void 0) {
+        settingsCache.set(String(row.key), String(row.value));
+      }
+    }
   } catch (err) {
-    console.error("Error saving database file:", err);
+    console.warn("[DB Settings Cache] Error al precargar ajustes:", err);
   }
 }
-function initTables(database) {
-  database.run(`
+async function initTables(c) {
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS profiles (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       age INTEGER NOT NULL,
-      zone TEXT NOT NULL,
       description TEXT NOT NULL,
       rate_bs REAL NOT NULL,
       commission_bs REAL NOT NULL,
@@ -93,7 +109,7 @@ function initTables(database) {
       priority_order INTEGER DEFAULT 0
     );
   `);
-  database.run(`
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS customer_requests (
       id TEXT PRIMARY KEY,
       profile_id TEXT NOT NULL,
@@ -103,10 +119,15 @@ function initTables(database) {
       telegram_first_name TEXT,
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
-      notes TEXT
+      notes TEXT,
+      receipt_url TEXT
     );
   `);
-  database.run(`
+  try {
+    await c.execute("ALTER TABLE customer_requests ADD COLUMN receipt_url TEXT");
+  } catch {
+  }
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS conversations (
       telegram_user_id TEXT PRIMARY KEY,
       step TEXT NOT NULL,
@@ -115,7 +136,7 @@ function initTables(database) {
       last_updated TEXT NOT NULL
     );
   `);
-  database.run(`
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS audit_logs (
       id TEXT PRIMARY KEY,
       action TEXT NOT NULL,
@@ -125,7 +146,7 @@ function initTables(database) {
       timestamp TEXT NOT NULL
     );
   `);
-  database.run(`
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS sync_errors (
       id TEXT PRIMARY KEY,
       profile_id TEXT NOT NULL,
@@ -135,13 +156,13 @@ function initTables(database) {
       status TEXT NOT NULL
     );
   `);
-  database.run(`
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS system_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
   `);
-  database.run(`
+  await c.execute(`
     CREATE TABLE IF NOT EXISTS commission_logs (
       id TEXT PRIMARY KEY,
       request_id TEXT,
@@ -151,10 +172,14 @@ function initTables(database) {
       paid_at TEXT NOT NULL
     );
   `);
+  await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('telegram_only_access', 'true')");
+  await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('auto_reply_delay_minutes', '10')");
+  await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('bot_username', 'CatalogoVIPSCZBot')");
+  await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('admin_contact_username', 'danii001')");
 }
-function seedInitialData(database) {
-  const check = database.exec("SELECT COUNT(*) as count FROM profiles");
-  const count = check[0]?.values[0]?.[0];
+async function seedInitialData(c) {
+  const check = await c.execute("SELECT COUNT(*) as count FROM profiles");
+  const count = Number(check.rows[0]?.count || 0);
   if (count === 0) {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const sampleProfiles = [
@@ -162,7 +187,6 @@ function seedInitialData(database) {
         id: "prof_scz_01",
         name: "Camila",
         age: 22,
-        zone: "Santa Cruz",
         description: "Acompa\xF1ante elegante, educada y distinguida. Excelente presencia para cenas, eventos y momentos de relajaci\xF3n privada y reservada en Santa Cruz.",
         rate_bs: 450,
         commission_bs: 50,
@@ -177,10 +201,9 @@ function seedInitialData(database) {
         id: "prof_scz_02",
         name: "Valeria",
         age: 24,
-        zone: "Santa Cruz",
         description: "Modelo independiente de trato refinado y dulce. Atenci\xF3n exclusiva con m\xE1xima confidencialidad y excelente trato personal.",
         rate_bs: 500,
-        commission_bs: 50,
+        commission_bs: 60,
         photos: [
           "https://images.unsplash.com/photo-1502716119720-b23a93e5fe1b?auto=format&fit=crop&w=800&q=80",
           "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?auto=format&fit=crop&w=800&q=80"
@@ -190,65 +213,49 @@ function seedInitialData(database) {
       },
       {
         id: "prof_scz_03",
-        name: "Fiorella",
+        name: "Andrea",
         age: 21,
-        zone: "Santa Cruz",
         description: "Elegante, atenta y distinguida. Ideal para veladas exclusivas con reserva anticipada y atenci\xF3n personalizada.",
-        rate_bs: 400,
+        rate_bs: 450,
         commission_bs: 50,
         photos: [
-          "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=800&q=80"
-        ],
-        status: "ocupada",
-        priority_order: 3
-      },
-      {
-        id: "prof_scz_04",
-        name: "Nicole",
-        age: 23,
-        zone: "Santa Cruz",
-        description: "Chica carism\xE1tica y muy profesional. Excelente figura, simpat\xEDa y m\xE1xima discreci\xF3n garantizada en Santa Cruz.",
-        rate_bs: 480,
-        commission_bs: 50,
-        photos: [
-          "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=800&q=80"
+          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80"
         ],
         status: "disponible",
-        priority_order: 4
+        priority_order: 3
       }
     ];
-    const stmt = database.prepare(`
-      INSERT INTO profiles (id, name, age, zone, description, rate_bs, commission_bs, photos, status, created_at, updated_at, telegram_message_id, priority_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-    `);
     for (const p of sampleProfiles) {
-      stmt.run([
-        p.id,
-        p.name,
-        p.age,
-        p.zone,
-        p.description,
-        p.rate_bs,
-        p.commission_bs,
-        JSON.stringify(p.photos),
-        p.status,
-        now,
-        now,
-        p.priority_order || 0
-      ]);
+      await c.execute({
+        sql: `INSERT INTO profiles (id, name, age, description, rate_bs, commission_bs, photos, status, created_at, updated_at, telegram_message_id, priority_order)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+        args: [
+          p.id,
+          p.name,
+          p.age,
+          p.description,
+          p.rate_bs,
+          p.commission_bs,
+          JSON.stringify(p.photos),
+          p.status,
+          now,
+          now,
+          p.priority_order || 0
+        ]
+      });
     }
-    stmt.free();
-    database.run(`
-      INSERT INTO audit_logs (id, action, performed_by, profile_id, details, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [
-      "log_init_01",
-      "SYSTEM_INIT",
-      "System",
-      null,
-      "Base de datos inicializada con perfiles de prueba en Santa Cruz",
-      now
-    ]);
+    await c.execute({
+      sql: `INSERT INTO audit_logs (id, action, performed_by, profile_id, details, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [
+        "log_init_01",
+        "SYSTEM_INIT",
+        "System",
+        null,
+        "Base de datos inicializada con perfiles de prueba en Santa Cruz",
+        now
+      ]
+    });
   }
 }
 function normalizePhotoUrls(photos) {
@@ -261,62 +268,54 @@ function normalizePhotoUrls(photos) {
     return url;
   });
 }
+function mapRowToProfile(row) {
+  let photosParsed = [];
+  try {
+    photosParsed = normalizePhotoUrls(JSON.parse(row.photos || "[]"));
+  } catch {
+    photosParsed = [];
+  }
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    age: Number(row.age),
+    description: String(row.description || ""),
+    rate_bs: Number(row.rate_bs || 0),
+    commission_bs: Number(row.commission_bs || 0),
+    photos: photosParsed,
+    status: row.status,
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+    telegram_message_id: row.telegram_message_id ? Number(row.telegram_message_id) : void 0,
+    priority_order: Number(row.priority_order || 0)
+  };
+}
+function normalizeRequestStatus(status) {
+  const validStatuses = ["pendiente", "confirmado", "rechazado", "completado", "comision_pagada"];
+  const value = typeof status === "string" ? status : "pendiente";
+  return validStatuses.includes(value) ? value : "pendiente";
+}
 async function getAllProfiles() {
-  const database = await getDb();
-  const res = database.exec("SELECT * FROM profiles ORDER BY priority_order ASC, updated_at DESC");
-  if (!res || res.length === 0) return [];
-  const columns = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    columns.forEach((col, idx) => {
-      obj[col] = row[idx];
-    });
-    try {
-      obj.photos = normalizePhotoUrls(JSON.parse(obj.photos || "[]"));
-    } catch {
-      obj.photos = [];
-    }
-    return obj;
-  });
+  const db = await getDb();
+  const res = await db.execute("SELECT * FROM profiles ORDER BY priority_order ASC, updated_at DESC");
+  return res.rows.map(mapRowToProfile);
 }
 async function getPublicProfiles() {
-  const database = await getDb();
-  const res = database.exec("SELECT * FROM profiles WHERE status IN ('disponible', 'ocupada') AND age >= 18 ORDER BY priority_order ASC, updated_at DESC");
-  if (!res || res.length === 0) return [];
-  const columns = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    columns.forEach((col, idx) => {
-      obj[col] = row[idx];
-    });
-    try {
-      obj.photos = normalizePhotoUrls(JSON.parse(obj.photos || "[]"));
-    } catch {
-      obj.photos = [];
-    }
-    return obj;
-  });
+  const db = await getDb();
+  const res = await db.execute("SELECT * FROM profiles WHERE status IN ('disponible', 'ocupada') AND age >= 18 ORDER BY priority_order ASC, updated_at DESC");
+  return res.rows.map(mapRowToProfile);
 }
 async function getProfileById(id) {
-  const database = await getDb();
-  const stmt = database.prepare("SELECT * FROM profiles WHERE id = ?");
-  stmt.bind([id]);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    let photosParsed = [];
-    try {
-      photosParsed = normalizePhotoUrls(JSON.parse(row.photos || "[]"));
-    } catch {
-      photosParsed = [];
-    }
-    return { ...row, photos: photosParsed };
-  }
-  stmt.free();
-  return null;
+  const db = await getDb();
+  const res = await db.execute({
+    sql: "SELECT * FROM profiles WHERE id = ?",
+    args: [id]
+  });
+  if (res.rows.length === 0) return null;
+  return mapRowToProfile(res.rows[0]);
 }
 async function saveProfile(profile) {
-  const database = await getDb();
+  const db = await getDb();
   const existing = await getProfileById(profile.id);
   const now = (/* @__PURE__ */ new Date()).toISOString();
   if (profile.age !== void 0 && profile.age < 18) {
@@ -325,7 +324,6 @@ async function saveProfile(profile) {
   if (existing) {
     const updatedName = profile.name ?? existing.name;
     const updatedAge = profile.age ?? existing.age;
-    const updatedZone = profile.zone ?? existing.zone;
     const updatedDesc = profile.description ?? existing.description;
     const updatedRate = profile.rate_bs ?? existing.rate_bs;
     const updatedCommission = profile.commission_bs ?? existing.commission_bs;
@@ -333,72 +331,75 @@ async function saveProfile(profile) {
     const updatedStatus = profile.status ?? existing.status;
     const updatedTgMsgId = profile.telegram_message_id !== void 0 ? profile.telegram_message_id : existing.telegram_message_id;
     const updatedPriority = profile.priority_order ?? existing.priority_order;
-    database.run(`
-      UPDATE profiles
-      SET name = ?, age = ?, zone = ?, description = ?, rate_bs = ?, commission_bs = ?, photos = ?, status = ?, updated_at = ?, telegram_message_id = ?, priority_order = ?
-      WHERE id = ?
-    `, [
-      updatedName,
-      updatedAge,
-      updatedZone,
-      updatedDesc,
-      updatedRate,
-      updatedCommission,
-      updatedPhotos,
-      updatedStatus,
-      now,
-      updatedTgMsgId,
-      updatedPriority,
-      profile.id
-    ]);
+    await db.execute({
+      sql: `UPDATE profiles
+            SET name = ?, age = ?, description = ?, rate_bs = ?, commission_bs = ?, photos = ?, status = ?, updated_at = ?, telegram_message_id = ?, priority_order = ?
+            WHERE id = ?`,
+      args: [
+        updatedName,
+        updatedAge,
+        updatedDesc,
+        updatedRate,
+        updatedCommission,
+        updatedPhotos,
+        updatedStatus,
+        now,
+        updatedTgMsgId ?? null,
+        updatedPriority,
+        profile.id
+      ]
+    });
   } else {
-    database.run(`
-      INSERT INTO profiles (id, name, age, zone, description, rate_bs, commission_bs, photos, status, created_at, updated_at, telegram_message_id, priority_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      profile.id,
-      profile.name || "Sin nombre",
-      profile.age || 18,
-      profile.zone || "Santa Cruz",
-      profile.description || "",
-      profile.rate_bs || 0,
-      profile.commission_bs || 0,
-      JSON.stringify(profile.photos || []),
-      profile.status || "borrador",
-      now,
-      now,
-      profile.telegram_message_id || null,
-      profile.priority_order || 0
-    ]);
+    await db.execute({
+      sql: `INSERT INTO profiles (id, name, age, description, rate_bs, commission_bs, photos, status, created_at, updated_at, telegram_message_id, priority_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        profile.id,
+        profile.name || "Sin nombre",
+        profile.age || 18,
+        profile.description || "",
+        profile.rate_bs || 0,
+        profile.commission_bs || 0,
+        JSON.stringify(profile.photos || []),
+        profile.status || "borrador",
+        now,
+        now,
+        profile.telegram_message_id || null,
+        profile.priority_order || 0
+      ]
+    });
   }
-  saveDb();
   return await getProfileById(profile.id);
 }
 async function deleteProfile(id) {
-  const database = await getDb();
-  database.run("DELETE FROM profiles WHERE id = ?", [id]);
-  saveDb();
+  const db = await getDb();
+  await db.execute({
+    sql: "DELETE FROM profiles WHERE id = ?",
+    args: [id]
+  });
   return true;
 }
 async function createCustomerRequest(req) {
-  const database = await getDb();
+  const db = await getDb();
   const id = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  database.run(`
-    INSERT INTO customer_requests (id, profile_id, profile_name, telegram_user_id, telegram_username, telegram_first_name, status, created_at, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
-    id,
-    req.profile_id || "",
-    req.profile_name || "",
-    req.telegram_user_id || null,
-    req.telegram_username || null,
-    req.telegram_first_name || null,
-    req.status || "pendiente",
-    now,
-    req.notes || ""
-  ]);
-  saveDb();
+  const normalizedStatus = normalizeRequestStatus(req.status || "pendiente");
+  await db.execute({
+    sql: `INSERT INTO customer_requests (id, profile_id, profile_name, telegram_user_id, telegram_username, telegram_first_name, status, created_at, notes, receipt_url)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      id,
+      req.profile_id || "",
+      req.profile_name || "",
+      req.telegram_user_id || null,
+      req.telegram_username || null,
+      req.telegram_first_name || null,
+      normalizedStatus,
+      now,
+      req.notes || null,
+      req.receipt_url || null
+    ]
+  });
   return {
     id,
     profile_id: req.profile_id || "",
@@ -406,172 +407,233 @@ async function createCustomerRequest(req) {
     telegram_user_id: req.telegram_user_id,
     telegram_username: req.telegram_username,
     telegram_first_name: req.telegram_first_name,
-    status: req.status || "pendiente",
+    status: normalizedStatus,
     created_at: now,
-    notes: req.notes
+    notes: req.notes,
+    receipt_url: req.receipt_url
   };
 }
 async function getCustomerRequests() {
-  const database = await getDb();
-  const res = database.exec("SELECT * FROM customer_requests ORDER BY created_at DESC");
-  if (!res || res.length === 0) return [];
-  const columns = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    columns.forEach((col, idx) => {
-      obj[col] = row[idx];
-    });
-    return obj;
-  });
+  const db = await getDb();
+  const res = await db.execute("SELECT * FROM customer_requests ORDER BY created_at DESC LIMIT 100");
+  return res.rows.map((r) => ({
+    id: String(r.id),
+    profile_id: String(r.profile_id),
+    profile_name: String(r.profile_name),
+    telegram_user_id: r.telegram_user_id ? String(r.telegram_user_id) : void 0,
+    telegram_username: r.telegram_username ? String(r.telegram_username) : void 0,
+    telegram_first_name: r.telegram_first_name ? String(r.telegram_first_name) : void 0,
+    status: normalizeRequestStatus(r.status),
+    created_at: String(r.created_at),
+    notes: r.notes ? String(r.notes) : void 0,
+    receipt_url: r.receipt_url ? String(r.receipt_url) : void 0
+  }));
 }
 async function getCustomerRequestById(id) {
-  const database = await getDb();
-  const stmt = database.prepare("SELECT * FROM customer_requests WHERE id = ?");
-  stmt.bind([id]);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return row;
-  }
-  stmt.free();
-  return null;
+  const db = await getDb();
+  const res = await db.execute({
+    sql: "SELECT * FROM customer_requests WHERE id = ?",
+    args: [id]
+  });
+  if (res.rows.length === 0) return null;
+  const r = res.rows[0];
+  return {
+    id: String(r.id),
+    profile_id: String(r.profile_id),
+    profile_name: String(r.profile_name),
+    telegram_user_id: r.telegram_user_id ? String(r.telegram_user_id) : void 0,
+    telegram_username: r.telegram_username ? String(r.telegram_username) : void 0,
+    telegram_first_name: r.telegram_first_name ? String(r.telegram_first_name) : void 0,
+    status: normalizeRequestStatus(r.status),
+    created_at: String(r.created_at),
+    notes: r.notes ? String(r.notes) : void 0,
+    receipt_url: r.receipt_url ? String(r.receipt_url) : void 0
+  };
 }
 async function updateCustomerRequestStatus(id, status) {
-  const database = await getDb();
-  database.run("UPDATE customer_requests SET status = ? WHERE id = ?", [status, id]);
-  saveDb();
-}
-async function getConversationState(userId) {
-  const database = await getDb();
-  const stmt = database.prepare("SELECT * FROM conversations WHERE telegram_user_id = ?");
-  stmt.bind([userId]);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return {
-      telegram_user_id: row.telegram_user_id,
-      step: row.step,
-      draft_data: JSON.parse(row.draft_data || "{}"),
-      active_profile_id: row.active_profile_id || void 0,
-      last_updated: row.last_updated
-    };
-  }
-  stmt.free();
-  return null;
-}
-async function setConversationState(userId, step, draftData, activeProfileId) {
-  const database = await getDb();
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  database.run(`
-    INSERT INTO conversations (telegram_user_id, step, draft_data, active_profile_id, last_updated)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(telegram_user_id) DO UPDATE SET
-      step = excluded.step,
-      draft_data = excluded.draft_data,
-      active_profile_id = excluded.active_profile_id,
-      last_updated = excluded.last_updated
-  `, [
-    userId,
-    step,
-    JSON.stringify(draftData),
-    activeProfileId || null,
-    now
-  ]);
-  saveDb();
-}
-async function clearConversationState(userId) {
-  const database = await getDb();
-  database.run("DELETE FROM conversations WHERE telegram_user_id = ?", [userId]);
-  saveDb();
-}
-async function addAuditLog(action, performedBy, details, profileId) {
-  const database = await getDb();
-  const id = `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  database.run(`
-    INSERT INTO audit_logs (id, action, performed_by, profile_id, details, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `, [id, action, performedBy, profileId || null, details, now]);
-  saveDb();
-}
-async function getAuditLogs() {
-  const database = await getDb();
-  const res = database.exec("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 100");
-  if (!res || res.length === 0) return [];
-  const columns = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    columns.forEach((col, idx) => {
-      obj[col] = row[idx];
-    });
-    return obj;
+  const db = await getDb();
+  const normalizedStatus = normalizeRequestStatus(status);
+  await db.execute({
+    sql: "UPDATE customer_requests SET status = ? WHERE id = ?",
+    args: [normalizedStatus, id]
   });
 }
+async function getConversationState(userId) {
+  const db = await getDb();
+  const res = await db.execute({
+    sql: "SELECT * FROM conversations WHERE telegram_user_id = ?",
+    args: [userId]
+  });
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  return {
+    telegram_user_id: String(row.telegram_user_id),
+    step: String(row.step),
+    draft_data: JSON.parse(String(row.draft_data || "{}")),
+    active_profile_id: row.active_profile_id ? String(row.active_profile_id) : void 0,
+    last_updated: String(row.last_updated)
+  };
+}
+async function setConversationState(userId, step, draftData, activeProfileId) {
+  const db = await getDb();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await db.execute({
+    sql: `INSERT INTO conversations (telegram_user_id, step, draft_data, active_profile_id, last_updated)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(telegram_user_id) DO UPDATE SET
+            step = excluded.step,
+            draft_data = excluded.draft_data,
+            active_profile_id = excluded.active_profile_id,
+            last_updated = excluded.last_updated`,
+    args: [userId, step, JSON.stringify(draftData), activeProfileId || null, now]
+  });
+}
+async function clearConversationState(userId) {
+  const db = await getDb();
+  await db.execute({
+    sql: "DELETE FROM conversations WHERE telegram_user_id = ?",
+    args: [userId]
+  });
+}
+async function addAuditLog(action, performedBy, details, profileId) {
+  const db = await getDb();
+  const id = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await db.execute({
+    sql: `INSERT INTO audit_logs (id, action, performed_by, profile_id, details, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [id, action, performedBy, profileId || null, details, now]
+  });
+}
+async function getAuditLogs() {
+  const db = await getDb();
+  const res = await db.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 100");
+  return res.rows.map((r) => ({
+    id: String(r.id),
+    action: String(r.action),
+    performed_by: String(r.performed_by),
+    profile_id: r.profile_id ? String(r.profile_id) : void 0,
+    details: String(r.details),
+    timestamp: String(r.timestamp)
+  }));
+}
 async function addSyncError(profileId, action, errorMessage) {
-  const database = await getDb();
+  const db = await getDb();
   const id = `err_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  database.run(`
-    INSERT INTO sync_errors (id, profile_id, action, error_message, timestamp, status)
-    VALUES (?, ?, ?, ?, ?, 'pending')
-  `, [id, profileId, action, errorMessage, now]);
-  saveDb();
+  await db.execute({
+    sql: `INSERT INTO sync_errors (id, profile_id, action, error_message, timestamp, status)
+          VALUES (?, ?, ?, ?, ?, 'pending')`,
+    args: [id, profileId, action, errorMessage, now]
+  });
 }
 async function getSyncErrors() {
-  const database = await getDb();
-  const res = database.exec("SELECT * FROM sync_errors ORDER BY timestamp DESC LIMIT 50");
-  if (!res || res.length === 0) return [];
-  const columns = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    columns.forEach((col, idx) => {
-      obj[col] = row[idx];
-    });
-    return obj;
+  const db = await getDb();
+  const res = await db.execute("SELECT * FROM sync_errors ORDER BY timestamp DESC LIMIT 50");
+  return res.rows.map((r) => {
+    const statusValue = String(r.status);
+    const status = statusValue === "pending" || statusValue === "resolved" || statusValue === "retried" ? statusValue : "pending";
+    return {
+      id: String(r.id),
+      profile_id: String(r.profile_id),
+      action: String(r.action),
+      error_message: String(r.error_message),
+      timestamp: String(r.timestamp),
+      status
+    };
   });
 }
 function getSystemSetting(key) {
-  if (!db) return null;
-  const stmt = db.prepare("SELECT value FROM system_settings WHERE key = ?");
-  stmt.bind([key]);
-  if (stmt.step()) {
-    const val = stmt.getAsObject().value;
-    stmt.free();
-    return val;
-  }
-  stmt.free();
-  return null;
+  return settingsCache.get(key) || null;
 }
-function saveSystemSetting(key, value) {
-  if (!db) return;
-  db.run("INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)", [key, value]);
-  saveDb();
-}
-async function addCommissionLog(telegram_user, profile_name, amount_bs, request_id) {
-  const database = await getDb();
-  const defaultComm = Number(getSystemSetting("default_commission_bs")) || 50;
-  const finalAmount = amount_bs !== void 0 && amount_bs !== null ? Number(amount_bs) : defaultComm;
-  const id = `comm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const paid_at = (/* @__PURE__ */ new Date()).toISOString();
-  const stmt = database.prepare("INSERT INTO commission_logs (id, request_id, telegram_user, profile_name, amount_bs, paid_at) VALUES (?, ?, ?, ?, ?, ?)");
-  stmt.run([id, request_id || null, telegram_user, profile_name, finalAmount, paid_at]);
-  stmt.free();
-  saveDb();
-  return { id, request_id, telegram_user, profile_name, amount_bs: finalAmount, paid_at };
-}
-async function getCommissionLogs() {
-  const database = await getDb();
-  const res = database.exec("SELECT * FROM commission_logs ORDER BY paid_at DESC");
-  if (!res || res.length === 0) return [];
-  const columns = res[0].columns;
-  return res[0].values.map((row) => {
-    const obj = {};
-    columns.forEach((col, idx) => {
-      obj[col] = row[idx];
-    });
-    return obj;
+async function saveSystemSetting(key, value) {
+  settingsCache.set(key, value);
+  const db = await getDb();
+  await db.execute({
+    sql: "INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)",
+    args: [key, value]
   });
 }
+async function addCommissionLog(telegram_user, profile_name, amount_bs, request_id) {
+  const db = await getDb();
+  const id = `comm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const paid_at = (/* @__PURE__ */ new Date()).toISOString();
+  await db.execute({
+    sql: "INSERT INTO commission_logs (id, request_id, telegram_user, profile_name, amount_bs, paid_at) VALUES (?, ?, ?, ?, ?, ?)",
+    args: [id, request_id || null, telegram_user, profile_name, amount_bs, paid_at]
+  });
+  return { id, request_id, telegram_user, profile_name, amount_bs, paid_at };
+}
+async function getCommissionLogs() {
+  const db = await getDb();
+  const res = await db.execute("SELECT * FROM commission_logs ORDER BY paid_at DESC");
+  return res.rows.map((r) => ({
+    id: String(r.id),
+    request_id: r.request_id ? String(r.request_id) : void 0,
+    telegram_user: String(r.telegram_user),
+    profile_name: String(r.profile_name),
+    amount_bs: Number(r.amount_bs || 0),
+    paid_at: String(r.paid_at)
+  }));
+}
+function getDbInfo() {
+  const tursoUrl = process.env.TURSO_DATABASE_URL;
+  if (tursoUrl) {
+    const host = tursoUrl.replace(/^libsql:\/\//, "").replace(/^https?:\/\//, "");
+    return {
+      type: "turso",
+      is_cloud: true,
+      label: "Turso Cloud DB",
+      host,
+      status: "connected"
+    };
+  }
+  return {
+    type: "sqlite",
+    is_cloud: false,
+    label: "SQLite Local",
+    host: "data/catalogo.sqlite",
+    status: "connected"
+  };
+}
+async function pingDb() {
+  const db = await getDb();
+  const start = Date.now();
+  await db.execute("SELECT 1");
+  const latency_ms = Date.now() - start;
+  return {
+    success: true,
+    latency_ms,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+var import_client, import_fs, import_path, DATA_DIR, DB_FILE, client, settingsCache;
+var init_db = __esm({
+  "src/server/db.ts"() {
+    import_client = require("@libsql/client");
+    import_fs = __toESM(require("fs"), 1);
+    import_path = __toESM(require("path"), 1);
+    DATA_DIR = import_path.default.join(process.cwd(), "data");
+    DB_FILE = import_path.default.join(DATA_DIR, "catalogo.sqlite");
+    client = null;
+    settingsCache = /* @__PURE__ */ new Map();
+  }
+});
+
+// server.ts
+var import_dotenv2 = __toESM(require("dotenv"), 1);
+var import_express2 = __toESM(require("express"), 1);
+var import_cors = __toESM(require("cors"), 1);
+var import_path4 = __toESM(require("path"), 1);
+var import_fs4 = __toESM(require("fs"), 1);
+var import_vite = require("vite");
+
+// src/server/routes.ts
+var import_express = __toESM(require("express"), 1);
+var import_multer = __toESM(require("multer"), 1);
+var import_path3 = __toESM(require("path"), 1);
+var import_fs3 = __toESM(require("fs"), 1);
+init_db();
 
 // src/server/telegram.ts
 var import_dotenv = __toESM(require("dotenv"), 1);
@@ -580,6 +642,7 @@ var import_path2 = __toESM(require("path"), 1);
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
 var import_dns = __toESM(require("dns"), 1);
 var import_https = __toESM(require("https"), 1);
+init_db();
 import_dotenv.default.config();
 try {
   import_dns.default.setDefaultResultOrder("ipv4first");
@@ -668,15 +731,25 @@ async function pinChatMessage(chatId, messageId) {
 }
 async function updateBotMenuButton() {
   const { baseUrl } = getBotConfig();
-  const catalogUrl = `${baseUrl}/catalogo`;
   return await callTelegramApi("setChatMenuButton", {
     menu_button: {
       type: "web_app",
-      text: "\u{1F48E} Cat\xE1logo VIP",
+      text: "\u{1F48E} Ver Cat\xE1logo VIP",
       web_app: {
-        url: catalogUrl
+        url: baseUrl
       }
     }
+  });
+}
+async function registerBotCommands() {
+  return await callTelegramApi("setMyCommands", {
+    commands: [
+      { command: "catalogo", description: "\u{1F48E} Ver Cat\xE1logo VIP" },
+      { command: "admin", description: "\u{1F510} Panel Administrativo" },
+      { command: "pasos", description: "\u{1F4CB} Pasos y Aclaraciones de Atenci\xF3n" },
+      { command: "faq", description: "\u2753 Preguntas Frecuentes sobre Comisi\xF3n" },
+      { command: "start", description: "\u2728 Iniciar Men\xFA Principal" }
+    ]
   });
 }
 async function registerBotWebhook() {
@@ -719,7 +792,7 @@ async function syncProfileToChannel(profileId, performer = "Bot Admin") {
 \u2728 *CAT\xC1LOGO SANTA CRUZ - ${profile.name.toUpperCase()}* \u2728
 
 \u{1F464} *Nombre*: ${profile.name}
-\u{1F51E} *Edad*: ${profile.age} a\xF1os (Verificada +18)
+\u{1F51E} *Edad*: ${profile.age} a\xF1os
 \u{1F4CD} *Ubicaci\xF3n*: Santa Cruz de la Sierra
 \u{1F4B0} *TARIFA SERVICIO*: Bs. ${profile.rate_bs}
 \u{1F3F7}\uFE0F *COMISI\xD3N*: Bs. ${profile.commission_bs}
@@ -733,19 +806,22 @@ ${profile.description}
 \u2022 Servicios exclusivos para personas mayores de 18 a\xF1os.
 \u2022 Coordinaci\xF3n y confirmaci\xF3n previa directamente por privado.
 `;
-  const webUrl = `${baseUrl}/#profile-${profile.id}`;
+  const botCatalogUrl = `https://t.me/${username}?start=cat`;
   const reqUrl = `https://t.me/${username}?start=req_${profile.id}`;
   const replyMarkup = {
     inline_keyboard: [
       [
-        { text: "\u{1F4F1} Solicitar Disponibilidad", url: reqUrl }
+        { text: "\u{1F48E} Ver Cat\xE1logo VIP", url: botCatalogUrl }
       ],
       [
-        { text: "\u{1F310} Ver en Cat\xE1logo Web", url: webUrl }
+        { text: "\u{1F4F2} Solicitar M\xE9todo de Pago (QR)", url: reqUrl }
       ]
     ]
   };
-  const primaryPhoto = profile.photos && profile.photos.length > 0 ? profile.photos[0] : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80";
+  let primaryPhoto = profile.photos && profile.photos.length > 0 ? profile.photos[0] : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80";
+  if (primaryPhoto.startsWith("/")) {
+    primaryPhoto = `${baseUrl}${primaryPhoto}`;
+  }
   if (profile.telegram_message_id) {
     const editRes = await callTelegramApi("editMessageCaption", {
       chat_id: channelId,
@@ -822,9 +898,37 @@ async function processTelegramUpdate(update) {
   const chatId = message.chat.id;
   const fromId = message.from?.id;
   const text = message.text ? message.text.trim() : "";
-  if (text.startsWith("/start req_")) {
-    const profileId = text.replace("/start req_", "").trim();
+  if (text.startsWith("/start req_") || text.startsWith("/start pago_") || text.startsWith("/reservar ") || text.startsWith("/pago ")) {
+    const profileId = text.replace("/start req_", "").replace("/start pago_", "").replace("/reservar ", "").replace("/pago ", "").trim();
     await handleClientAvailabilityRequest(message, profileId);
+    return;
+  }
+  if (text === "/catalogo" || text === "/start cat" || text.startsWith("/start cat") || text.startsWith("/start p_")) {
+    const { baseUrl } = getBotConfig();
+    const cleanAdmin = getSystemSetting("admin_contact_username") || "danii001";
+    const isUserAdmin = isAdminUser(fromId);
+    const keyboard = [
+      [
+        { text: "\u{1F48E} Ver Cat\xE1logo VIP", web_app: { url: baseUrl } }
+      ]
+    ];
+    if (isUserAdmin) {
+      keyboard.push([
+        { text: "\u{1F510} Panel Administrativo", web_app: { url: `${baseUrl}/admin` } }
+      ]);
+    }
+    keyboard.push([
+      { text: `\u{1F4AC} Administradora (@${cleanAdmin})`, url: `https://t.me/${cleanAdmin}` }
+    ]);
+    await sendMessage(chatId, `\u{1F48E} *Iam Dani \u2022 Cat\xE1logo VIP Santa Cruz* \u{1F48E}
+
+Bienvenido/a a nuestro cat\xE1logo oficial y confidencial de damas ejecutivas en Santa Cruz de la Sierra.
+
+Pulsa el bot\xF3n *"\u{1F48E} Ver Cat\xE1logo VIP"* abajo para abrir la Mini App y revisar perfiles y fotos:`, {
+      reply_markup: {
+        inline_keyboard: keyboard
+      }
+    });
     return;
   }
   const isInviteCmd = text.startsWith("/start inv_") || text === "/invitar" || text === "/codigo" || text === "/vip" || !isAdminUser(fromId) && text === "/start";
@@ -833,6 +937,7 @@ async function processTelegramUpdate(update) {
     const cleanUsername = username || "CatalogoVIPSCZBot";
     const shortCode = `VIP-SCZ-${Math.abs(Number(fromId) || 1234) % 8999 + 1e3}`;
     const inviteLink = `https://t.me/${cleanUsername}?start=inv_${Math.abs(Number(fromId) || 1234) % 8999 + 1e3}`;
+    const cleanAdmin = getSystemSetting("admin_contact_username") || "danii001";
     let titleHeader = "\u{1F48E} *C\xCDRCULO VIP SANTA CRUZ \u2014 ACCESO CONFIDENCIAL* \u{1F48E}";
     if (text.startsWith("/start inv_")) {
       const ref = text.replace("/start inv_", "").trim();
@@ -848,12 +953,72 @@ async function processTelegramUpdate(update) {
 \u{1F4F2} *ENLACE DE INVITACI\xD3N PARA ACCESO AL BOT:*
 \u{1F449} \`${inviteLink}\`
 
-_El cat\xE1logo es un c\xEDrculo reservado (+18). Pulsa el bot\xF3n "Ver Cat\xE1logo VIP" abajo o en el men\xFA del bot para ver disponibilidad._`;
+_Trato directo, discreto y 100% confidencial. Pulsa el bot\xF3n "Ver Cat\xE1logo VIP" abajo para ver fotos y disponibilidad._`;
+    const buttons = [
+      [
+        { text: "\u{1F48E} Ver Cat\xE1logo VIP", web_app: { url: baseUrl } }
+      ]
+    ];
+    if (isAdminUser(fromId)) {
+      buttons.push([
+        { text: "\u{1F510} Panel Administrativo", web_app: { url: `${baseUrl}/admin` } }
+      ]);
+    }
+    buttons.push([
+      { text: `\u{1F4AC} Administradora (@${cleanAdmin})`, url: `https://t.me/${cleanAdmin}` }
+    ]);
     await sendMessage(chatId, vipMsg, {
+      reply_markup: {
+        inline_keyboard: buttons
+      }
+    });
+    return;
+  }
+  if (text === "/pasos" || text === "/faq" || text === "/aclaraciones" || text === "/preguntas") {
+    const adminUsername = getSystemSetting("admin_contact_username") || "danii001";
+    const { baseUrl } = getBotConfig();
+    const faqText = `
+\u{1F4D6} *PASOS Y ACLARACIONES DEL CAT\xC1LOGO*
+
+\u{1F4CC} *PASO #1 \u2014 REVISA EL CAT\xC1LOGO*
+Ingresa al cat\xE1logo y revisa la informaci\xF3n de cada dama disponible con sus fotograf\xEDas, nombre y edad.
+
+\u{1F4CC} *PASO #2 \u2014 ELIGE A TU DAMA FAVORITA*
+Selecciona a la dama de tu preferencia con la que deseas coordinar un encuentro.
+
+\u{1F4CC} *PASO #3 \u2014 REALIZA EL PAGO DE LA COMISI\xD3N*
+Solicita al BOT el pago de la comisi\xF3n.
+\u{1F4B3} *Importante:* Todos los pagos se realizan \xFAnicamente mediante c\xF3digo QR oficial proporcionado por el BOT.
+
+\u{1F4CC} *PASO #4 \u2014 CONFIRMA TU PAGO Y RECIBE EL CONTACTO*
+Env\xEDa tu comprobante al chat de la Administradora (@${adminUsername}). Una vez confirmado, te enviar\xE1 el n\xFAmero de WhatsApp de la dama seleccionada.
+\u{1F4F2} A partir de ese momento, te comunicar\xE1s directamente con ella para coordinar en privado fecha, hora y lugar.
+
+\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
+\u2753 *PREGUNTAS FRECUENTES (FAQ)*
+
+\u{1F539} *\xBFPor qu\xE9 se debe pagar por adelantado?*
+Es un requisito obligatorio para acceder al contacto. Permite identificar clientes serios, evitar consultas innecesarias y garantizar el respeto hacia las damas. Sin excepciones.
+
+\u{1F539} *\xBFQu\xE9 incluye el pago de la comisi\xF3n?*
+\xDAnicamente el acceso al n\xFAmero de WhatsApp de la dama elegida. Todo acuerdo posterior es estrictamente privado entre el cliente y ella. La administraci\xF3n no interviene.
+
+\u{1F539} *\xBFPuedo ver a la dama antes de pagar?*
+No. Toda la informaci\xF3n est\xE1 disponible en el cat\xE1logo. Por privacidad y seguridad, no se realizan presentaciones previas.
+
+\u{1F539} *\xBFSe realizan reembolsos?*
+No se realizan reembolsos una vez entregado el contacto. Si la dama elegida no puede por motivos personales o disponibilidad, la administraci\xF3n gestionar\xE1 una alternativa equivalente con otra dama disponible, previa aceptaci\xF3n.
+
+\u26A0\uFE0F *Cero consultas de disponibilidad a Daniela:* Paga con anticipaci\xF3n (1 o m\xE1s d\xEDas antes).
+    `;
+    await sendMessage(chatId, faqText, {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "\u{1F48E} Ver Cat\xE1logo VIP (Mini App)", web_app: { url: baseUrl } }
+            { text: "\u{1F48E} Ver Cat\xE1logo VIP", web_app: { url: baseUrl } }
+          ],
+          [
+            { text: `\u{1F4AC} Chat con Daniela (@${adminUsername})`, url: `https://t.me/${adminUsername}` }
           ]
         ]
       }
@@ -863,14 +1028,35 @@ _El cat\xE1logo es un c\xEDrculo reservado (+18). Pulsa el bot\xF3n "Ver Cat\xE1
   if (text === "/panel" || text === "/admin") {
     const { baseUrl } = getBotConfig();
     const adminUrl = `${baseUrl}/admin`;
-    await sendMessage(chatId, `\u{1F510} *Panel de Administraci\xF3n \u2014 Mini App*
+    const cleanAdmin = getSystemSetting("admin_contact_username") || "danii001";
+    const isUserAdmin = isAdminUser(fromId);
+    if (!isUserAdmin) {
+      await sendMessage(chatId, `\u{1F512} *Acceso Administrativo*
+
+Este comando es exclusivo para la Administradora del cat\xE1logo (@${cleanAdmin}).
+
+Para consultar el cat\xE1logo disponible, pulsa abajo:`, {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "\u{1F48E} Ver Cat\xE1logo VIP", web_app: { url: baseUrl } }
+            ]
+          ]
+        }
+      });
+      return;
+    }
+    await sendMessage(chatId, `\u{1F510} *Panel de Administraci\xF3n \u2014 Iam Dani*
 
 Acceso exclusivo para la Administradora del cat\xE1logo.
-Puedes abrir tu Panel de Gesti\xF3n directamente aqu\xED dentro de Telegram:`, {
+Puedes abrir tu Panel de Gesti\xF3n directamente aqu\xED dentro de Telegram o en tu navegador web:`, {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "\u{1F510} Abrir Panel Admin (Mini App)", web_app: { url: adminUrl } }
+            { text: "\u{1F510} Panel Administrativo", web_app: { url: adminUrl } }
+          ],
+          [
+            { text: "\u{1F48E} Ver Cat\xE1logo VIP", web_app: { url: baseUrl } }
           ],
           [
             { text: "\u{1F310} Abrir en Navegador Externo", url: adminUrl }
@@ -911,7 +1097,7 @@ Bienvenido al canal oficial de atenci\xF3n confidencial y reserva directa en San
 \u{1F4F2} *ENLACE DE INVITACI\xD3N DIRECTA AL BOT:*
 \u{1F449} \`${inviteLink}\`
 
-_Trato directo, discreto y 100% confidencial (+18). Pulsa el bot\xF3n "Ver Cat\xE1logo VIP" en el men\xFA inferior para abrir el directorio._`;
+_Trato directo, discreto y 100% confidencial. Pulsa el bot\xF3n "Ver Cat\xE1logo VIP" en el men\xFA inferior para abrir el directorio._`;
     const res = await sendMessage(chatId, msg);
     if (res && res.result && res.result.message_id) {
       await pinChatMessage(chatId, res.result.message_id);
@@ -938,19 +1124,33 @@ _Trato directo, discreto y 100% confidencial (+18). Pulsa el bot\xF3n "Ver Cat\x
     const targetUserId = text.replace("/qr ", "").trim();
     const qrUrl = getSystemSetting("qr_image_url");
     if (!qrUrl) {
-      await sendMessage(chatId, "\u26A0\uFE0F *No hay imagen QR configurada* en la pantalla de administraci\xF3n de la p\xE1gina web. Sube primero el QR en el panel de administraci\xF3n.");
+      await sendMessage(chatId, "\u26A0\uFE0F *No hay imagen QR configurada* en el panel administrativo. Sube primero la imagen del QR en el Panel de Administraci\xF3n (pesta\xF1a Telegram).");
       return;
+    }
+    const { getCustomerRequests: getCustomerRequests2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+    const userRequests = await getCustomerRequests2();
+    const userReq = userRequests.find((r) => r.telegram_user_id === targetUserId);
+    let commText = "de la reserva";
+    let profName = "";
+    if (userReq) {
+      profName = ` para *${userReq.profile_name}*`;
+      const p = await getProfileById(userReq.profile_id);
+      if (p && p.commission_bs) {
+        commText = `Bs. ${p.commission_bs}`;
+      }
     }
     const replyText = `\u2728 *Iam Dani Cat\xE1logo Santa Cruz* \u2728
 
 \xA1Hola!
 
-Nuestra Administradora ha procesado tu solicitud. Para confirmar tu atenci\xF3n prioritaria, te adjuntamos nuestro *QR de COMISI\xD3N oficial*.
+Nuestra Administradora ha confirmado tu solicitud${profName}.
 
-\u{1F4F2} *Por favor, realiza el pago y env\xEDa tu comprobante / captura directamente al chat privado de la Administradora.* \xA1M\xE1xima discreci\xF3n y confidencialidad garantizada!`;
+\u{1F3F7}\uFE0F *MONTO DE COMISI\xD3N*: *${commText}*
+
+\u{1F4F2} *Por favor, realiza el pago de ${commText} mediante este QR oficial y env\xEDa tu comprobante / captura directamente al chat de la Administradora para coordinar tu ingreso.* \xA1Confidencialidad absoluta!`;
     const resQr = await sendPhotoToUser(targetUserId, qrUrl, replyText);
     if (resQr.ok) {
-      await sendMessage(chatId, `\u2705 *QR de COMISI\xD3N enviado exitosamente* al cliente con ID \`${targetUserId}\`.`);
+      await sendMessage(chatId, `\u2705 *QR de COMISI\xD3N (${commText}) enviado exitosamente* al cliente con ID \`${targetUserId}\`.`);
     } else {
       await sendMessage(chatId, `\u274C *Error al enviar QR al cliente* (\`${targetUserId}\`): ${resQr.description || "Error desconocido"}`);
     }
@@ -1028,7 +1228,6 @@ async function handleConversationStep(chatId, userId, message, state) {
         return;
       }
       state.draft_data.age = age;
-      state.draft_data.zone = "Santa Cruz";
       state.step = "NEW_RATE";
       await setConversationState(userId, "NEW_RATE", state.draft_data);
       await sendMessage(chatId, `\u2705 Edad: *${age} a\xF1os*
@@ -1097,7 +1296,6 @@ async function handleConversationStep(chatId, userId, message, state) {
 
 \u{1F464} *Nombre*: ${state.draft_data.name}
 \u{1F51E} *Edad*: ${state.draft_data.age} a\xF1os
-\u{1F4CD} *Zona*: ${state.draft_data.zone}
 \u{1F4B0} *Tarifa*: Bs. ${state.draft_data.rate_bs}
 \u{1F3F7}\uFE0F *Comisi\xF3n*: Bs. ${state.draft_data.commission_bs}
 \u{1F4F7} *Fotos*: ${existingPhotos.length} adjunta(s)
@@ -1139,8 +1337,7 @@ ${state.draft_data.description}
           return;
         }
         updateData.age = age;
-      } else if (field === "zone") updateData.zone = text;
-      else if (field === "rate_bs") updateData.rate_bs = parseFloat(text);
+      } else if (field === "rate_bs") updateData.rate_bs = parseFloat(text);
       else if (field === "commission_bs") updateData.commission_bs = parseFloat(text);
       else if (field === "description") updateData.description = text;
       const updated = await saveProfile(updateData);
@@ -1206,7 +1403,6 @@ async function handleCallbackQuery(cb) {
       id: newId,
       name: state.draft_data.name,
       age: state.draft_data.age || 18,
-      zone: state.draft_data.zone || "Santa Cruz",
       description: state.draft_data.description || "",
       rate_bs: state.draft_data.rate_bs || 0,
       commission_bs: state.draft_data.commission_bs || 0,
@@ -1313,7 +1509,7 @@ async function handleListProfiles(chatId) {
   profiles.forEach((p) => {
     const badge = p.status === "disponible" ? "\u{1F7E2} Disponible" : p.status === "ocupada" ? "\u{1F534} Ocupada" : p.status === "pausada" ? "\u23F8\uFE0F Pausada" : p.status === "retirada" ? "\u{1F5D1}\uFE0F Retirada" : "\u{1F4C1} Borrador";
     text += `\u2022 *${p.name}* (${p.age}a) - ${badge}
-  ID: \`${p.id}\` | Zona: ${p.zone} | Tarifa: Bs. ${p.rate_bs}
+  ID: \`${p.id}\` | Tarifa: Bs. ${p.rate_bs}
 
 `;
   });
@@ -1331,7 +1527,6 @@ async function handleShowProfileDetail(chatId, id) {
 
 \u{1F194} *ID*: \`${profile.id}\`
 \u{1F51E} *Edad*: ${profile.age} a\xF1os
-\u{1F4CD} *Zona*: ${profile.zone}
 \u{1F4B0} *Tarifa*: Bs. ${profile.rate_bs}
 \u{1F3F7}\uFE0F *Comisi\xF3n*: Bs. ${profile.commission_bs}
 \u{1F4CC} *Estado*: ${profile.status.toUpperCase()}
@@ -1369,8 +1564,7 @@ async function handleStartEditProfile(chatId, userId, id) {
       inline_keyboard: [
         [
           { text: "Nombre", callback_data: `edit_field_name_${id}` },
-          { text: "Edad (+18)", callback_data: `edit_field_age_${id}` },
-          { text: "Zona", callback_data: `edit_field_zone_${id}` }
+          { text: "Edad (+18)", callback_data: `edit_field_age_${id}` }
         ],
         [
           { text: "Tarifa (Bs.)", callback_data: `edit_field_rate_bs_${id}` },
@@ -1482,18 +1676,41 @@ async function handleClientAvailabilityRequest(message, profileId) {
     telegram_first_name: clientUser.first_name || "Cliente",
     status: "pendiente"
   });
+  const qrUrl = getSystemSetting("qr_image_url");
+  const adminUsername = getSystemSetting("admin_contact_username") || "danii001";
+  const { baseUrl } = getBotConfig();
   const clientReply = `
-\u2728 *SOLICITUD DE DISPONIBILIDAD REGISTRADA* \u2728
+\u2728 *Iam Dani Cat\xE1logo VIP Santa Cruz* \u2728
 
-Perfil consultado: *${profile.name}* (${profile.zone})
-Tarifa: *Bs. ${profile.rate_bs}*
+\xA1Hola, *${clientUser.first_name || "Estimado/a"}*!
+Has consultado por la modelo: *${profile.name}*
 
-\u{1F4CC} Tu solicitud ha sido notificada directamente a la Administradora oficial de *Iam Dani Cat\xE1logo Santa Cruz*. Te responderemos por este mismo medio a la brevedad.
+\u{1F3F7}\uFE0F *MONTO DE COMISI\xD3N A TRANSFERIR*: *Bs. ${profile.commission_bs}*
 
-\u26A0\uFE0F *ADVERTENCIA DE SEGURIDAD*:
-No realice ning\xFAn tipo de pago, transferencia ni adelanto de dinero sin antes recibir confirmaci\xF3n oficial y directa por parte de la Administradora.
+\u{1F4F2} *M\xC9TODO DE PAGO*:
+1. Transfiere exactamente el monto de la comisi\xF3n (*Bs. ${profile.commission_bs}*) escaneando el c\xF3digo QR oficial adjunto.
+2. Env\xEDa la captura de tu comprobante directamente al chat privado de nuestra Administradora: *@${adminUsername}*.
+
+\u{1F512} *Confidencialidad absoluta y atenci\xF3n inmediata garantizada.*
   `;
-  await sendMessage(chatId, clientReply);
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: `\u{1F4AC} Enviar Comprobante a Dani (@${adminUsername})`, url: `https://t.me/${adminUsername}` }
+      ],
+      [
+        { text: "\u{1F48E} Ver Cat\xE1logo (Mini App)", web_app: { url: baseUrl } }
+      ]
+    ]
+  };
+  if (qrUrl) {
+    await sendPhotoToUser(chatId, qrUrl, clientReply);
+    await sendMessage(chatId, `\u{1F4F2} *Comun\xEDcate con Dani:* Pulsa abajo para enviar tu comprobante a *@${adminUsername}*:`, {
+      reply_markup: keyboard
+    });
+  } else {
+    await sendMessage(chatId, clientReply, { reply_markup: keyboard });
+  }
   const { adminIds } = getBotConfig();
   const clientHandle = clientUser.username ? `@${clientUser.username}` : clientUser.first_name || `ID: ${clientUser.id}`;
   const adminNotice = `
@@ -1502,11 +1719,11 @@ No realice ning\xFAn tipo de pago, transferencia ni adelanto de dinero sin antes
 \u{1F464} *Cliente*: ${clientUser.first_name} (${clientHandle})
 \u{1F194} *Telegram ID*: \`${clientUser.id}\`
 \u{1F460} *Perfil Solicitado*: ${profile.name} (ID: \`${profile.id}\`)
-\u{1F4CD} *Zona*: ${profile.zone}
-\u{1F4B0} *Tarifa*: Bs. ${profile.rate_bs}
+\u{1F3F7}\uFE0F *Comisi\xF3n de Reserva*: *Bs. ${profile.commission_bs}*
+\u{1F4B0} *Tarifa Servicio*: Bs. ${profile.rate_bs}
 \u{1F4C5} *Fecha*: ${(/* @__PURE__ */ new Date()).toLocaleString()}
 
-_Favor responder directamente al cliente por mensaje privado._
+_El bot ya le envi\xF3 el QR de pago y el monto de la comisi\xF3n al cliente._
   `;
   for (const adminId of adminIds) {
     if (adminId) {
@@ -1531,11 +1748,11 @@ function broadcastEvent(eventType, data) {
 data: ${JSON.stringify(data)}
 
 `;
-  for (const client of sseClients) {
+  for (const client2 of sseClients) {
     try {
-      client.write(payload);
+      client2.write(payload);
     } catch {
-      sseClients.delete(client);
+      sseClients.delete(client2);
     }
   }
 }
@@ -1593,9 +1810,6 @@ router.get("/info", (req, res) => {
   const tgVal = getSystemSetting("telegram_only_access");
   const telegramOnly = tgVal === null ? true : tgVal === "true";
   const autoReplyDelay = getSystemSetting("auto_reply_delay_minutes") || "10";
-  const defaultRate = Number(getSystemSetting("default_rate_bs")) || 450;
-  const defaultCommission = Number(getSystemSetting("default_commission_bs")) || 50;
-  const defaultStatus = getSystemSetting("default_status") || "borrador";
   res.json({
     app_name: "Iam Dani Cat\xE1logo",
     bot_username: config.username,
@@ -1604,11 +1818,10 @@ router.get("/info", (req, res) => {
     telegram_only_access: telegramOnly,
     auto_reply_delay_minutes: autoReplyDelay,
     qr_image_url: getSystemSetting("qr_image_url") || "",
+    admin_contact_username: getSystemSetting("admin_contact_username") || "danii001",
     pinned_message_text: getSystemSetting("pinned_message_text") || "",
     pinned_message_active: getSystemSetting("pinned_message_active") === "true",
-    default_rate_bs: defaultRate,
-    default_commission_bs: defaultCommission,
-    default_status: defaultStatus,
+    database: getDbInfo(),
     legal_notice: "Cat\xE1logo privado exclusivo para mayores de 18 a\xF1os."
   });
 });
@@ -1641,30 +1854,38 @@ function scheduleAutoReply(requestId, tgUserId, clientName, profileName) {
       const checkReq = await getCustomerRequestById(requestId);
       if (checkReq && checkReq.status === "pendiente") {
         const qrUrl = getSystemSetting("qr_image_url");
+        const profile = await getProfileById(checkReq.profile_id);
+        const commissionAmount = profile?.commission_bs || 0;
         const autoReplyText = `\u2728 *Iam Dani Cat\xE1logo Santa Cruz* \u2728
 
 \xA1Hola ${clientName || "Estimado/a"}!
 
-Nuestra Administradora ha revisado tu consulta para *${profileName}*.
+Tu solicitud para consultar disponibilidad de *${profileName}* ha sido procesada.
 
-${qrUrl ? "\u{1F4F2} *Te adjuntamos nuestro QR de COMISI\xD3N oficial.* Por favor, realiza el pago y env\xEDa tu comprobante o captura **directamente por mensaje privado a la Administradora** para confirmar tu cita prioritaria." : "La Admin se comunicar\xE1 contigo por mensaje privado en cuanto est\xE9 disponible."}
+\u{1F3F7}\uFE0F *MONTO DE COMISI\xD3N A TRANSFERIR*: *Bs. ${commissionAmount}*
 
-\u{1F512} Trato 100% Confidencial y Discreto.`;
+${qrUrl ? "\u{1F4F2} *Te adjuntamos el c\xF3digo QR oficial de pago.* Por favor, realiza la transferencia de *Bs. " + commissionAmount + "* y env\xEDa tu comprobante / captura directamente al chat privado de la Administradora para coordinar tu atenci\xF3n prioritaria." : "Por favor comun\xEDcate directamente con la Administradora para coordinar el m\xE9todo de pago."}
+
+\u{1F512} M\xE1xima discreci\xF3n y confidencialidad garantizada.`;
         if (qrUrl) {
           await sendPhotoToUser(tgUserId, qrUrl, autoReplyText);
         } else {
           await sendMessage(tgUserId, autoReplyText);
         }
-        console.log(`[AutoReply] Respuesta autom\xE1tica enviada tras ${delayMinutes} min a ${tgUserId} (Solicitud #${requestId})`);
+        console.log(`[AutoReply] QR y respuesta con comisi\xF3n de Bs. ${commissionAmount} enviada a ${tgUserId} (Solicitud #${requestId})`);
       }
     } catch (e) {
       console.error("[AutoReply] Error en respuesta autom\xE1tica del bot:", e);
     }
   }, delayMs);
 }
-router.post("/requests", async (req, res) => {
+router.post("/requests", upload.single("receipt"), async (req, res) => {
   try {
     const { profile_id, client_name, client_telegram, tg_user_id, notes } = req.body;
+    let receipt_url = req.body.receipt_url;
+    if (req.file) {
+      receipt_url = `/uploads/${req.file.filename}`;
+    }
     if (!profile_id) {
       res.status(400).json({ error: "El ID del perfil es requerido" });
       return;
@@ -1681,43 +1902,51 @@ router.post("/requests", async (req, res) => {
       telegram_first_name: client_name || "Cliente Telegram/Web",
       telegram_username: client_telegram ? client_telegram.replace("@", "") : void 0,
       notes: notes || "Solicitud de disponibilidad enviada desde el cat\xE1logo VIP",
+      receipt_url: receipt_url || void 0,
       status: "pendiente"
     });
+    const config = getBotConfig();
+    const adminContactUsername = getSystemSetting("admin_contact_username") || "danii001";
     if (tg_user_id) {
       const userConfirmText = `\u2728 *Iam Dani Cat\xE1logo* \u2728
 
 \xA1Hola ${client_name || "Estimado/a"}!
 
-Hemos recibido tu solicitud de atenci\xF3n para *${profile.name}*.
+Hemos recibido tu comprobante de comisi\xF3n y solicitud para *${profile.name}*.
 
-La Administradora procesar\xE1 tu consulta de forma confidencial y te responder\xE1 directamente a este chat en breve.`;
+La Administradora (@${adminContactUsername}) lo verificar\xE1 de inmediato y te contactar\xE1 en privado.`;
       await sendMessage(String(tg_user_id), userConfirmText);
       scheduleAutoReply(request.id, String(tg_user_id), client_name || "Estimado/a", profile.name);
     }
-    const { adminIds } = getBotConfig();
-    const defaultComm = Number(getSystemSetting("default_commission_bs")) || 50;
     const adminNotice = `
-\u{1F514} *NUEVA SOLICITUD DE DISPONIBILIDAD* \u{1F514}
+\u{1F514} *NUEVA SOLICITUD Y COMPROBANTE DE COMISI\xD3N* \u{1F514}
 
-\u{1F464} *Cliente*: ${client_name || "An\xF3nimo"} ${client_telegram ? "(@" + client_telegram + ")" : ""}
+\u{1F464} *Cliente*: ${client_name || "An\xF3nimo"} ${client_telegram ? "(@" + client_telegram.replace("@", "") + ")" : ""}
 \u{1F194} *Telegram ID*: \`${tg_user_id || "No detectado"}\`
-\u{1F460} *Perfil*: ${profile.name} (TARIFA SERVICIO: Bs. ${profile.rate_bs} | COMISI\xD3N: Bs. ${profile.commission_bs || defaultComm})
-\u{1F4CD} *Zona*: ${profile.zone}
-\u{1F4DD} *Notas*: ${notes || "Sin observaciones"}
+\u{1F460} *Perfil*: ${profile.name} (TARIFA SERVICIO: Bs. ${profile.rate_bs})
+\u{1F3F7}\uFE0F *Comisi\xF3n de Reserva*: *Bs. ${profile.commission_bs}*
+${receipt_url ? "\u{1F4F8} *Comprobante de Pago Adjuntado*: S\xED" : "\u{1F4F8} *Comprobante*: No adjuntado"}
+\u{1F4DD} *Mensaje del Cliente*: ${notes || "Sin observaciones"}
 \u{1F4C5} *Fecha*: ${(/* @__PURE__ */ new Date()).toLocaleString()}
 
-\u{1F4AC} _Para responder al cliente envi\xE1ndole el QR de COMISI\xD3N adjunto, escribe en este chat:_
+\u{1F4AC} _Para responder al cliente envi\xE1ndole el QR de COMISI\xD3N, escribe:_
 \`/qr ${tg_user_id || "ID_CLIENTE"}\`
     `;
-    for (const adminId of adminIds) {
+    for (const adminId of config.adminIds) {
       if (adminId) {
-        await sendMessage(adminId, adminNotice);
+        if (receipt_url) {
+          const fullReceiptUrl = receipt_url.startsWith("http") ? receipt_url : `${config.baseUrl}${receipt_url}`;
+          await sendPhotoToUser(adminId, fullReceiptUrl, adminNotice);
+        } else {
+          await sendMessage(adminId, adminNotice);
+        }
       }
     }
     broadcastEvent("NEW_REQUEST", request);
     res.json({
       success: true,
-      message: "Solicitud enviada con \xE9xito. La Administradora responder\xE1 a la brevedad por privado.",
+      message: "Comprobante y solicitud enviados exitosamente a la Administradora.",
+      admin_contact_username: adminContactUsername,
       request
     });
   } catch (err) {
@@ -1782,7 +2011,7 @@ router.get("/admin/profiles", requireAdminAuth, async (req, res) => {
 });
 router.post("/admin/profiles", requireAdminAuth, async (req, res) => {
   try {
-    const { name, age, zone, description, rate_bs, commission_bs, photos, status, priority_order } = req.body;
+    const { name, age, description, rate_bs, commission_bs, photos, status, priority_order } = req.body;
     if (!name || !age || age < 18) {
       res.status(400).json({ error: "El nombre es obligatorio y la edad debe ser igual o mayor a 18 a\xF1os." });
       return;
@@ -1792,7 +2021,6 @@ router.post("/admin/profiles", requireAdminAuth, async (req, res) => {
       id: newId,
       name,
       age: Number(age),
-      zone: zone || "Santa Cruz",
       description: description || "",
       rate_bs: Number(rate_bs) || 0,
       commission_bs: Number(commission_bs) || 0,
@@ -1819,7 +2047,7 @@ router.put("/admin/profiles/:id", requireAdminAuth, async (req, res) => {
       res.status(404).json({ error: "Perfil no encontrado" });
       return;
     }
-    const { name, age, zone, description, rate_bs, commission_bs, photos, status, priority_order } = req.body;
+    const { name, age, description, rate_bs, commission_bs, photos, status, priority_order } = req.body;
     if (age !== void 0 && Number(age) < 18) {
       res.status(400).json({ error: "La edad debe ser mayor o igual a 18 a\xF1os." });
       return;
@@ -1828,7 +2056,6 @@ router.put("/admin/profiles/:id", requireAdminAuth, async (req, res) => {
       id: profileId,
       name: name ?? existing.name,
       age: age !== void 0 ? Number(age) : existing.age,
-      zone: zone ?? existing.zone,
       description: description ?? existing.description,
       rate_bs: rate_bs !== void 0 ? Number(rate_bs) : existing.rate_bs,
       commission_bs: commission_bs !== void 0 ? Number(commission_bs) : existing.commission_bs,
@@ -1965,13 +2192,16 @@ router.post("/admin/requests/:id/reply", requireAdminAuth, async (req, res) => {
     const targetUserId = request.telegram_user_id;
     if (targetUserId) {
       const qrUrl = getSystemSetting("qr_image_url");
+      const profile = await getProfileById(request.profile_id);
+      const commissionAmount = profile?.commission_bs || 0;
       const msgText = `\u2728 *RESPUESTA DE LA ADMINISTRADORA* \u2728
 
-\u{1F4CC} *Modelo Consultada*: ${request.profile_name}
+\u{1F4CC} *Modelo*: ${request.profile_name}
+\u{1F3F7}\uFE0F *Monto de Comisi\xF3n a transferir*: *Bs. ${commissionAmount}*
 
-\u{1F4AC} ${reply_message || "Hola, tu solicitud ha sido procesada."}
+\u{1F4AC} ${reply_message || "Hola, tu solicitud ha sido confirmada."}
 
-\u{1F4F2} *Por favor, realiza el pago de la COMISI\xD3N y env\xEDa tu comprobante o captura directamente al privado de la Administradora.* \xA1Confidencialidad garantizada!
+\u{1F4F2} *Por favor, realiza el pago mediante el QR oficial adjunto y env\xEDa tu comprobante o captura directamente al privado de la Administradora.* \xA1Confidencialidad garantizada!
 
 *Estado de la Solicitud*: ${newStatus.toUpperCase()}`;
       let sent;
@@ -2022,7 +2252,9 @@ router.post("/admin/webhook/setup", requireAdminAuth, async (req, res) => {
       })
     });
     const result = await response.json();
-    res.json({ webhook_url: webhookUrl, telegram_response: result });
+    await updateBotMenuButton();
+    await registerBotCommands();
+    res.json({ webhook_url: webhookUrl, telegram_response: result, menu_button: "updated", commands: "registered" });
   } catch (err) {
     res.status(500).json({ error: "Error al registrar webhook", details: err?.message });
   }
@@ -2031,15 +2263,17 @@ router.post("/admin/settings", requireAdminAuth, async (req, res) => {
   try {
     const {
       bot_username,
+      admin_contact_username,
       telegram_only_access,
-      auto_reply_delay_minutes,
-      default_rate_bs,
-      default_commission_bs,
-      default_status
+      auto_reply_delay_minutes
     } = req.body;
     if (bot_username !== void 0) {
       const cleanUsername = String(bot_username).replace(/^@/, "").trim();
       saveSystemSetting("bot_username", cleanUsername);
+    }
+    if (admin_contact_username !== void 0) {
+      const cleanAdmin = String(admin_contact_username).replace(/^@/, "").trim();
+      saveSystemSetting("admin_contact_username", cleanAdmin);
     }
     if (telegram_only_access !== void 0) {
       saveSystemSetting("telegram_only_access", telegram_only_access ? "true" : "false");
@@ -2047,32 +2281,18 @@ router.post("/admin/settings", requireAdminAuth, async (req, res) => {
     if (auto_reply_delay_minutes !== void 0) {
       saveSystemSetting("auto_reply_delay_minutes", String(auto_reply_delay_minutes));
     }
-    if (default_rate_bs !== void 0) {
-      saveSystemSetting("default_rate_bs", String(default_rate_bs));
-    }
-    if (default_commission_bs !== void 0) {
-      saveSystemSetting("default_commission_bs", String(default_commission_bs));
-    }
-    if (default_status !== void 0) {
-      saveSystemSetting("default_status", String(default_status));
-    }
     const adminId = req.adminUserId || "Admin Web";
-    await addAuditLog("UPDATE_SETTINGS", adminId, "Par\xE1metros del sistema y bot actualizados");
+    await addAuditLog("UPDATE_SETTINGS", adminId, "Ajustes de Telegram y bot actualizados");
     const updatedConfig = getBotConfig();
     const isTelegramOnly = getSystemSetting("telegram_only_access") === "true";
     const autoReplyDelay = getSystemSetting("auto_reply_delay_minutes") || "10";
-    const defaultRate = Number(getSystemSetting("default_rate_bs")) || 450;
-    const defaultComm = Number(getSystemSetting("default_commission_bs")) || 50;
-    const defaultSt = getSystemSetting("default_status") || "borrador";
     res.json({
       success: true,
       bot_username: updatedConfig.username,
+      admin_contact_username: getSystemSetting("admin_contact_username") || "danii001",
       telegram_only_access: isTelegramOnly,
       auto_reply_delay_minutes: autoReplyDelay,
-      qr_image_url: getSystemSetting("qr_image_url") || "",
-      default_rate_bs: defaultRate,
-      default_commission_bs: defaultComm,
-      default_status: defaultSt
+      qr_image_url: getSystemSetting("qr_image_url") || ""
     });
   } catch (err) {
     res.status(500).json({ error: "Error al guardar configuraci\xF3n" });
@@ -2125,8 +2345,7 @@ router.post("/admin/requests/:id/pay", requireAdminAuth, async (req, res) => {
     await updateCustomerRequestStatus(requestId, "comision_pagada");
     const tgUser = request.telegram_username ? `@${request.telegram_username}` : `${request.telegram_first_name || "An\xF3nimo"} (ID: ${request.telegram_user_id || "N/A"})`;
     const profile = await getProfileById(request.profile_id);
-    const defaultComm = Number(getSystemSetting("default_commission_bs")) || 50;
-    const amount = profile?.commission_bs || defaultComm;
+    const amount = profile?.commission_bs || 0;
     const log = await addCommissionLog(tgUser, request.profile_name, amount, requestId);
     if (request.telegram_user_id) {
       const msgText = `\u2705 *PAGO DE COMISI\xD3N REGISTRADO*
@@ -2142,8 +2361,25 @@ router.post("/admin/requests/:id/pay", requireAdminAuth, async (req, res) => {
     res.status(500).json({ error: "Error al marcar comisi\xF3n como pagada" });
   }
 });
+router.get("/admin/db/status", requireAdminAuth, async (req, res) => {
+  try {
+    const info = getDbInfo();
+    const ping = await pingDb();
+    res.json({
+      ...info,
+      ping
+    });
+  } catch (err) {
+    res.status(500).json({
+      ...getDbInfo(),
+      error: "Error al consultar la base de datos",
+      details: err?.message
+    });
+  }
+});
 
 // server.ts
+init_db();
 import_dotenv2.default.config();
 async function startServer() {
   await getDb();
@@ -2185,6 +2421,11 @@ async function startServer() {
       console.log("[Telegram Bot] Bot menu button updated:", res);
     }).catch((err) => {
       console.error("[Telegram Bot] Error updating menu button:", err);
+    });
+    registerBotCommands().then((res) => {
+      console.log("[Telegram Bot] Bot commands registered:", res);
+    }).catch((err) => {
+      console.error("[Telegram Bot] Error registering bot commands:", err);
     });
     registerBotWebhook().then((res) => {
       console.log("[Telegram Bot] Webhook registered:", res);

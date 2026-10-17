@@ -8,7 +8,6 @@ export interface Profile {
   id: string;
   name: string;
   age: number; // Always >= 18
-  zone: string; // General area, no exact address
   description: string;
   rate_bs: number; // Referencial rate in Bs.
   commission_bs: number; // Reserve commission in Bs.
@@ -32,6 +31,7 @@ export interface CustomerRequest {
   status: RequestStatus;
   created_at: string;
   notes?: string;
+  receipt_url?: string;
 }
 
 export interface ConversationState {

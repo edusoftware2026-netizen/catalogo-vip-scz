@@ -120,15 +120,26 @@ export async function pinChatMessage(chatId: string | number, messageId: number)
 
 export async function updateBotMenuButton() {
   const { baseUrl } = getBotConfig();
-  const catalogUrl = `${baseUrl}/catalogo`;
   return await callTelegramApi('setChatMenuButton', {
     menu_button: {
       type: 'web_app',
-      text: '💎 Catálogo VIP',
+      text: '💎 Ver Catálogo VIP',
       web_app: {
-        url: catalogUrl
+        url: baseUrl
       }
     }
+  });
+}
+
+export async function registerBotCommands() {
+  return await callTelegramApi('setMyCommands', {
+    commands: [
+      { command: 'catalogo', description: '💎 Ver Catálogo VIP' },
+      { command: 'admin', description: '🔐 Panel Administrativo' },
+      { command: 'pasos', description: '📋 Pasos y Aclaraciones de Atención' },
+      { command: 'faq', description: '❓ Preguntas Frecuentes sobre Comisión' },
+      { command: 'start', description: '✨ Iniciar Menú Principal' }
+    ]
   });
 }
 
@@ -181,7 +192,7 @@ export async function syncProfileToChannel(profileId: string, performer: string 
 ✨ *CATÁLOGO SANTA CRUZ - ${profile.name.toUpperCase()}* ✨
 
 👤 *Nombre*: ${profile.name}
-🔞 *Edad*: ${profile.age} años (Verificada +18)
+🔞 *Edad*: ${profile.age} años
 📍 *Ubicación*: Santa Cruz de la Sierra
 💰 *TARIFA SERVICIO*: Bs. ${profile.rate_bs}
 🏷️ *COMISIÓN*: Bs. ${profile.commission_bs}
@@ -196,21 +207,24 @@ ${profile.description}
 • Coordinación y confirmación previa directamente por privado.
 `;
 
-  const webUrl = `${baseUrl}/#profile-${profile.id}`;
+  const botCatalogUrl = `https://t.me/${username}?start=cat`;
   const reqUrl = `https://t.me/${username}?start=req_${profile.id}`;
 
   const replyMarkup = {
     inline_keyboard: [
       [
-        { text: '📱 Solicitar Disponibilidad', url: reqUrl }
+        { text: '💎 Ver Catálogo VIP', url: botCatalogUrl }
       ],
       [
-        { text: '🌐 Ver en Catálogo Web', url: webUrl }
+        { text: '📲 Solicitar Método de Pago (QR)', url: reqUrl }
       ]
     ]
   };
 
-  const primaryPhoto = profile.photos && profile.photos.length > 0 ? profile.photos[0] : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+  let primaryPhoto = profile.photos && profile.photos.length > 0 ? profile.photos[0] : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+  if (primaryPhoto.startsWith('/')) {
+    primaryPhoto = `${baseUrl}${primaryPhoto}`;
+  }
 
   // If already published, attempt edit first
   if (profile.telegram_message_id) {
@@ -306,10 +320,38 @@ export async function processTelegramUpdate(update: any) {
   const fromId = message.from?.id;
   const text = message.text ? message.text.trim() : '';
 
-  // 1. Deep Link Client Request handling (e.g., /start req_prof_scz_01)
-  if (text.startsWith('/start req_')) {
-    const profileId = text.replace('/start req_', '').trim();
+  // 1. Deep Link Client Request handling (e.g., /start req_prof_scz_01 or /reservar prof_scz_01)
+  if (text.startsWith('/start req_') || text.startsWith('/start pago_') || text.startsWith('/reservar ') || text.startsWith('/pago ')) {
+    const profileId = text.replace('/start req_', '').replace('/start pago_', '').replace('/reservar ', '').replace('/pago ', '').trim();
     await handleClientAvailabilityRequest(message, profileId);
+    return;
+  }
+
+  // 1.1. Comando /catalogo o apertura desde enlace de canal (/start cat)
+  if (text === '/catalogo' || text === '/start cat' || text.startsWith('/start cat') || text.startsWith('/start p_')) {
+    const { baseUrl } = getBotConfig();
+    const cleanAdmin = getSystemSetting('admin_contact_username') || 'danii001';
+    const isUserAdmin = isAdminUser(fromId);
+
+    const keyboard: any[][] = [
+      [
+        { text: '💎 Ver Catálogo VIP', web_app: { url: baseUrl } }
+      ]
+    ];
+    if (isUserAdmin) {
+      keyboard.push([
+        { text: '🔐 Panel Administrativo', web_app: { url: `${baseUrl}/admin` } }
+      ]);
+    }
+    keyboard.push([
+      { text: `💬 Administradora (@${cleanAdmin})`, url: `https://t.me/${cleanAdmin}` }
+    ]);
+
+    await sendMessage(chatId, `💎 *Iam Dani • Catálogo VIP Santa Cruz* 💎\n\nBienvenido/a a nuestro catálogo oficial y confidencial de damas ejecutivas en Santa Cruz de la Sierra.\n\nPulsa el botón *"💎 Ver Catálogo VIP"* abajo para abrir la Mini App y revisar perfiles y fotos:`, {
+      reply_markup: {
+        inline_keyboard: keyboard
+      }
+    });
     return;
   }
 
@@ -320,6 +362,7 @@ export async function processTelegramUpdate(update: any) {
     const cleanUsername = username || 'CatalogoVIPSCZBot';
     const shortCode = `VIP-SCZ-${(Math.abs(Number(fromId) || 1234) % 8999) + 1000}`;
     const inviteLink = `https://t.me/${cleanUsername}?start=inv_${(Math.abs(Number(fromId) || 1234) % 8999) + 1000}`;
+    const cleanAdmin = getSystemSetting('admin_contact_username') || 'danii001';
 
     let titleHeader = '💎 *CÍRCULO VIP SANTA CRUZ — ACCESO CONFIDENCIAL* 💎';
     if (text.startsWith('/start inv_')) {
@@ -333,13 +376,77 @@ export async function processTelegramUpdate(update: any) {
       `\`${shortCode}\`\n\n` +
       `📲 *ENLACE DE INVITACIÓN PARA ACCESO AL BOT:*\n` +
       `👉 \`${inviteLink}\`\n\n` +
-      `_El catálogo es un círculo reservado (+18). Pulsa el botón "Ver Catálogo VIP" abajo o en el menú del bot para ver disponibilidad._`;
+      `_Trato directo, discreto y 100% confidencial. Pulsa el botón "Ver Catálogo VIP" abajo para ver fotos y disponibilidad._`;
+
+    const buttons: any[][] = [
+      [
+        { text: '💎 Ver Catálogo VIP', web_app: { url: baseUrl } }
+      ]
+    ];
+    if (isAdminUser(fromId)) {
+      buttons.push([
+        { text: '🔐 Panel Administrativo', web_app: { url: `${baseUrl}/admin` } }
+      ]);
+    }
+    buttons.push([
+      { text: `💬 Administradora (@${cleanAdmin})`, url: `https://t.me/${cleanAdmin}` }
+    ]);
 
     await sendMessage(chatId, vipMsg, {
       reply_markup: {
+        inline_keyboard: buttons
+      }
+    });
+    return;
+  }
+
+  // 1.3. Pasos y Preguntas Frecuentes (/pasos, /faq, /aclaraciones, /preguntas)
+  if (text === '/pasos' || text === '/faq' || text === '/aclaraciones' || text === '/preguntas') {
+    const adminUsername = getSystemSetting('admin_contact_username') || 'danii001';
+    const { baseUrl } = getBotConfig();
+    const faqText = `
+📖 *PASOS Y ACLARACIONES DEL CATÁLOGO*
+
+📌 *PASO #1 — REVISA EL CATÁLOGO*
+Ingresa al catálogo y revisa la información de cada dama disponible con sus fotografías, nombre y edad.
+
+📌 *PASO #2 — ELIGE A TU DAMA FAVORITA*
+Selecciona a la dama de tu preferencia con la que deseas coordinar un encuentro.
+
+📌 *PASO #3 — REALIZA EL PAGO DE LA COMISIÓN*
+Solicita al BOT el pago de la comisión.
+💳 *Importante:* Todos los pagos se realizan únicamente mediante código QR oficial proporcionado por el BOT.
+
+📌 *PASO #4 — CONFIRMA TU PAGO Y RECIBE EL CONTACTO*
+Envía tu comprobante al chat de la Administradora (@${adminUsername}). Una vez confirmado, te enviará el número de WhatsApp de la dama seleccionada.
+📲 A partir de ese momento, te comunicarás directamente con ella para coordinar en privado fecha, hora y lugar.
+
+━━━━━━━━━━━━━━━━━━━
+❓ *PREGUNTAS FRECUENTES (FAQ)*
+
+🔹 *¿Por qué se debe pagar por adelantado?*
+Es un requisito obligatorio para acceder al contacto. Permite identificar clientes serios, evitar consultas innecesarias y garantizar el respeto hacia las damas. Sin excepciones.
+
+🔹 *¿Qué incluye el pago de la comisión?*
+Únicamente el acceso al número de WhatsApp de la dama elegida. Todo acuerdo posterior es estrictamente privado entre el cliente y ella. La administración no interviene.
+
+🔹 *¿Puedo ver a la dama antes de pagar?*
+No. Toda la información está disponible en el catálogo. Por privacidad y seguridad, no se realizan presentaciones previas.
+
+🔹 *¿Se realizan reembolsos?*
+No se realizan reembolsos una vez entregado el contacto. Si la dama elegida no puede por motivos personales o disponibilidad, la administración gestionará una alternativa equivalente con otra dama disponible, previa aceptación.
+
+⚠️ *Cero consultas de disponibilidad a Daniela:* Paga con anticipación (1 o más días antes).
+    `;
+
+    await sendMessage(chatId, faqText, {
+      reply_markup: {
         inline_keyboard: [
           [
-            { text: '💎 Ver Catálogo VIP (Mini App)', web_app: { url: baseUrl } }
+            { text: '💎 Ver Catálogo VIP', web_app: { url: baseUrl } }
+          ],
+          [
+            { text: `💬 Chat con Daniela (@${adminUsername})`, url: `https://t.me/${adminUsername}` }
           ]
         ]
       }
@@ -351,11 +458,30 @@ export async function processTelegramUpdate(update: any) {
   if (text === '/panel' || text === '/admin') {
     const { baseUrl } = getBotConfig();
     const adminUrl = `${baseUrl}/admin`;
-    await sendMessage(chatId, `🔐 *Panel de Administración — Mini App*\n\nAcceso exclusivo para la Administradora del catálogo.\nPuedes abrir tu Panel de Gestión directamente aquí dentro de Telegram:`, {
+    const cleanAdmin = getSystemSetting('admin_contact_username') || 'danii001';
+    const isUserAdmin = isAdminUser(fromId);
+
+    if (!isUserAdmin) {
+      await sendMessage(chatId, `🔒 *Acceso Administrativo*\n\nEste comando es exclusivo para la Administradora del catálogo (@${cleanAdmin}).\n\nPara consultar el catálogo disponible, pulsa abajo:`, {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '💎 Ver Catálogo VIP', web_app: { url: baseUrl } }
+            ]
+          ]
+        }
+      });
+      return;
+    }
+
+    await sendMessage(chatId, `🔐 *Panel de Administración — Iam Dani*\n\nAcceso exclusivo para la Administradora del catálogo.\nPuedes abrir tu Panel de Gestión directamente aquí dentro de Telegram o en tu navegador web:`, {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: '🔐 Abrir Panel Admin (Mini App)', web_app: { url: adminUrl } }
+            { text: '🔐 Panel Administrativo', web_app: { url: adminUrl } }
+          ],
+          [
+            { text: '💎 Ver Catálogo VIP', web_app: { url: baseUrl } }
           ],
           [
             { text: '🌐 Abrir en Navegador Externo', url: adminUrl }
@@ -397,7 +523,7 @@ export async function processTelegramUpdate(update: any) {
       `Bienvenido al canal oficial de atención confidencial y reserva directa en Santa Cruz de la Sierra.\n\n` +
       `📲 *ENLACE DE INVITACIÓN DIRECTA AL BOT:*\n` +
       `👉 \`${inviteLink}\`\n\n` +
-      `_Trato directo, discreto y 100% confidencial (+18). Pulsa el botón "Ver Catálogo VIP" en el menú inferior para abrir el directorio._`;
+      `_Trato directo, discreto y 100% confidencial. Pulsa el botón "Ver Catálogo VIP" en el menú inferior para abrir el directorio._`;
 
     const res = await sendMessage(chatId, msg);
     if (res && res.result && res.result.message_id) {
@@ -429,13 +555,27 @@ export async function processTelegramUpdate(update: any) {
     const targetUserId = text.replace('/qr ', '').trim();
     const qrUrl = getSystemSetting('qr_image_url');
     if (!qrUrl) {
-      await sendMessage(chatId, '⚠️ *No hay imagen QR configurada* en la pantalla de administración de la página web. Sube primero el QR en el panel de administración.');
+      await sendMessage(chatId, '⚠️ *No hay imagen QR configurada* en el panel administrativo. Sube primero la imagen del QR en el Panel de Administración (pestaña Telegram).');
       return;
     }
-    const replyText = `✨ *Iam Dani Catálogo Santa Cruz* ✨\n\n¡Hola!\n\nNuestra Administradora ha procesado tu solicitud. Para confirmar tu atención prioritaria, te adjuntamos nuestro *QR de COMISIÓN oficial*.\n\n📲 *Por favor, realiza el pago y envía tu comprobante / captura directamente al chat privado de la Administradora.* ¡Máxima discreción y confidencialidad garantizada!`;
+
+    const { getCustomerRequests } = await import('./db.js');
+    const userRequests = await getCustomerRequests();
+    const userReq = userRequests.find(r => r.telegram_user_id === targetUserId);
+    let commText = 'de la reserva';
+    let profName = '';
+    if (userReq) {
+      profName = ` para *${userReq.profile_name}*`;
+      const p = await getProfileById(userReq.profile_id);
+      if (p && p.commission_bs) {
+        commText = `Bs. ${p.commission_bs}`;
+      }
+    }
+
+    const replyText = `✨ *Iam Dani Catálogo Santa Cruz* ✨\n\n¡Hola!\n\nNuestra Administradora ha confirmado tu solicitud${profName}.\n\n🏷️ *MONTO DE COMISIÓN*: *${commText}*\n\n📲 *Por favor, realiza el pago de ${commText} mediante este QR oficial y envía tu comprobante / captura directamente al chat de la Administradora para coordinar tu ingreso.* ¡Confidencialidad absoluta!`;
     const resQr = await sendPhotoToUser(targetUserId, qrUrl, replyText);
     if (resQr.ok) {
-      await sendMessage(chatId, `✅ *QR de COMISIÓN enviado exitosamente* al cliente con ID \`${targetUserId}\`.`);
+      await sendMessage(chatId, `✅ *QR de COMISIÓN (${commText}) enviado exitosamente* al cliente con ID \`${targetUserId}\`.`);
     } else {
       await sendMessage(chatId, `❌ *Error al enviar QR al cliente* (\`${targetUserId}\`): ${resQr.description || 'Error desconocido'}`);
     }
@@ -527,7 +667,6 @@ async function handleConversationStep(chatId: string | number, userId: string, m
         return;
       }
       state.draft_data.age = age;
-      state.draft_data.zone = 'Santa Cruz';
       state.step = 'NEW_RATE';
       await setConversationState(userId, 'NEW_RATE', state.draft_data);
       await sendMessage(chatId, `✅ Edad: *${age} años*\n\n💰 *(Paso 3/6)* Ingrese la *TARIFA SERVICIO en Bolivianos (Bs.)* (ej. 450):`);
@@ -598,7 +737,6 @@ async function handleConversationStep(chatId: string | number, userId: string, m
 
 👤 *Nombre*: ${state.draft_data.name}
 🔞 *Edad*: ${state.draft_data.age} años
-📍 *Zona*: ${state.draft_data.zone}
 💰 *Tarifa*: Bs. ${state.draft_data.rate_bs}
 🏷️ *Comisión*: Bs. ${state.draft_data.commission_bs}
 📷 *Fotos*: ${existingPhotos.length} adjunta(s)
@@ -645,8 +783,7 @@ ${state.draft_data.description}
           return;
         }
         updateData.age = age;
-      } else if (field === 'zone') updateData.zone = text;
-      else if (field === 'rate_bs') updateData.rate_bs = parseFloat(text);
+      } else if (field === 'rate_bs') updateData.rate_bs = parseFloat(text);
       else if (field === 'commission_bs') updateData.commission_bs = parseFloat(text);
       else if (field === 'description') updateData.description = text;
 
@@ -727,7 +864,6 @@ async function handleCallbackQuery(cb: any) {
       id: newId,
       name: state.draft_data.name,
       age: state.draft_data.age || 18,
-      zone: state.draft_data.zone || 'Santa Cruz',
       description: state.draft_data.description || '',
       rate_bs: state.draft_data.rate_bs || 0,
       commission_bs: state.draft_data.commission_bs || 0,
@@ -834,7 +970,7 @@ async function handleListProfiles(chatId: string | number) {
   let text = '📋 *LISTADO DE PERFILES DEL CATÁLOGO*:\n\n';
   profiles.forEach(p => {
     const badge = p.status === 'disponible' ? '🟢 Disponible' : p.status === 'ocupada' ? '🔴 Ocupada' : p.status === 'pausada' ? '⏸️ Pausada' : p.status === 'retirada' ? '🗑️ Retirada' : '📁 Borrador';
-    text += `• *${p.name}* (${p.age}a) - ${badge}\n  ID: \`${p.id}\` | Zona: ${p.zone} | Tarifa: Bs. ${p.rate_bs}\n\n`;
+    text += `• *${p.name}* (${p.age}a) - ${badge}\n  ID: \`${p.id}\` | Tarifa: Bs. ${p.rate_bs}\n\n`;
   });
 
   text += '_Usa /ver ID o /editar ID para administrar cada uno._';
@@ -853,7 +989,6 @@ async function handleShowProfileDetail(chatId: string | number, id: string) {
 
 🆔 *ID*: \`${profile.id}\`
 🔞 *Edad*: ${profile.age} años
-📍 *Zona*: ${profile.zone}
 💰 *Tarifa*: Bs. ${profile.rate_bs}
 🏷️ *Comisión*: Bs. ${profile.commission_bs}
 📌 *Estado*: ${profile.status.toUpperCase()}
@@ -894,8 +1029,7 @@ async function handleStartEditProfile(chatId: string | number, userId: string, i
       inline_keyboard: [
         [
           { text: 'Nombre', callback_data: `edit_field_name_${id}` },
-          { text: 'Edad (+18)', callback_data: `edit_field_age_${id}` },
-          { text: 'Zona', callback_data: `edit_field_zone_${id}` }
+          { text: 'Edad (+18)', callback_data: `edit_field_age_${id}` }
         ],
         [
           { text: 'Tarifa (Bs.)', callback_data: `edit_field_rate_bs_${id}` },
@@ -988,7 +1122,7 @@ async function handleConfirmDeleteCommand(chatId: string | number, id: string) {
   await sendMessage(chatId, `🚨 *Perfil ${profile.name} eliminado permanentemente*.`);
 }
 
-// Customer Availability Request Notification
+// Customer Availability Request Notification (Responde con QR y monto de comisión)
 async function handleClientAvailabilityRequest(message: any, profileId: string) {
   const chatId = message.chat.id;
   const clientUser = message.from;
@@ -1009,20 +1143,45 @@ async function handleClientAvailabilityRequest(message: any, profileId: string) 
     status: 'pendiente'
   });
 
-  // Reply to Client
+  const qrUrl = getSystemSetting('qr_image_url');
+  const adminUsername = getSystemSetting('admin_contact_username') || 'danii001';
+  const { baseUrl } = getBotConfig();
+
+  // Reply to Client with QR and COMMISSION ONLY
   const clientReply = `
-✨ *SOLICITUD DE DISPONIBILIDAD REGISTRADA* ✨
+✨ *Iam Dani Catálogo VIP Santa Cruz* ✨
 
-Perfil consultado: *${profile.name}* (${profile.zone})
-Tarifa: *Bs. ${profile.rate_bs}*
+¡Hola, *${clientUser.first_name || 'Estimado/a'}*!
+Has consultado por la modelo: *${profile.name}*
 
-📌 Tu solicitud ha sido notificada directamente a la Administradora oficial de *Iam Dani Catálogo Santa Cruz*. Te responderemos por este mismo medio a la brevedad.
+🏷️ *MONTO DE COMISIÓN A TRANSFERIR*: *Bs. ${profile.commission_bs}*
 
-⚠️ *ADVERTENCIA DE SEGURIDAD*:
-No realice ningún tipo de pago, transferencia ni adelanto de dinero sin antes recibir confirmación oficial y directa por parte de la Administradora.
+📲 *MÉTODO DE PAGO*:
+1. Transfiere exactamente el monto de la comisión (*Bs. ${profile.commission_bs}*) escaneando el código QR oficial adjunto.
+2. Envía la captura de tu comprobante directamente al chat privado de nuestra Administradora: *@${adminUsername}*.
+
+🔒 *Confidencialidad absoluta y atención inmediata garantizada.*
   `;
 
-  await sendMessage(chatId, clientReply);
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: `💬 Enviar Comprobante a Dani (@${adminUsername})`, url: `https://t.me/${adminUsername}` }
+      ],
+      [
+        { text: '💎 Ver Catálogo (Mini App)', web_app: { url: baseUrl } }
+      ]
+    ]
+  };
+
+  if (qrUrl) {
+    await sendPhotoToUser(chatId, qrUrl, clientReply);
+    await sendMessage(chatId, `📲 *Comunícate con Dani:* Pulsa abajo para enviar tu comprobante a *@${adminUsername}*:`, {
+      reply_markup: keyboard
+    });
+  } else {
+    await sendMessage(chatId, clientReply, { reply_markup: keyboard });
+  }
 
   // Notify Administrator
   const { adminIds } = getBotConfig();
@@ -1034,11 +1193,11 @@ No realice ningún tipo de pago, transferencia ni adelanto de dinero sin antes r
 👤 *Cliente*: ${clientUser.first_name} (${clientHandle})
 🆔 *Telegram ID*: \`${clientUser.id}\`
 👠 *Perfil Solicitado*: ${profile.name} (ID: \`${profile.id}\`)
-📍 *Zona*: ${profile.zone}
-💰 *Tarifa*: Bs. ${profile.rate_bs}
+🏷️ *Comisión de Reserva*: *Bs. ${profile.commission_bs}*
+💰 *Tarifa Servicio*: Bs. ${profile.rate_bs}
 📅 *Fecha*: ${new Date().toLocaleString()}
 
-_Favor responder directamente al cliente por mensaje privado._
+_El bot ya le envió el QR de pago y el monto de la comisión al cliente._
   `;
 
   for (const adminId of adminIds) {

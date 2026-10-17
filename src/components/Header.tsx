@@ -33,6 +33,10 @@ export const Header: React.FC<HeaderProps> = ({
               <p className="text-[10px] sm:text-[11px] text-zinc-400 flex items-center gap-1.5 mt-0.5">
                 <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span className="truncate">Catálogo Ejecutivo & Discreto</span>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 ml-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>En línea</span>
+                </span>
               </p>
             </div>
           </div>

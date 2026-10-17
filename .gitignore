@@ -28,6 +28,8 @@ dist-ssr/
 data/*.sqlite-journal
 data/*.sqlite-shm
 data/*.sqlite-wal
+data/*.db
+data/*.db3
 
 # Archivos de sistema y editores
 .DS_Store

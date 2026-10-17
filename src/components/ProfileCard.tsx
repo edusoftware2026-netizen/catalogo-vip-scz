@@ -123,7 +123,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
           </button>
 
           <button
-            onClick={() => onRequestAvailability(profile)}
+            onClick={() => onSelectProfile(profile)}
             id={`btn-request-${profile.id}`}
             className="flex-1 py-2.5 px-3 rounded-xl bg-linear-to-r from-amber-500 via-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-zinc-950 font-extrabold text-xs tracking-wide transition-all shadow-md shadow-amber-500/10 flex items-center justify-center gap-1.5 cursor-pointer"
           >

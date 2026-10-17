@@ -271,34 +271,76 @@ router.post('/requests', upload.single('receipt'), async (req: Request, res: Res
 
     // Send immediate automated chat to user's Telegram if user_id is present
     if (tg_user_id) {
-      const userConfirmText = `✨ *Iam Dani Catálogo* ✨\n\n¡Hola ${client_name || 'Estimado/a'}!\n\nHemos recibido tu comprobante de comisión y solicitud para *${profile.name}*.\n\nLa Administradora (@${adminContactUsername}) lo verificará de inmediato y te contactará en privado.`;
+      const userConfirmText = `✨ *Iam Dani Catálogo* ✨\n\n¡Hola ${client_name || 'Estimado/a'}!\n\nHemos recibido tu comprobante de comisión y solicitud para *${profile.name}*.\n\nLa Administradora verificará tu pago y te escribirá directamente por mensaje privado a tu Telegram para coordinar tu cita.`;
       await sendMessage(String(tg_user_id), userConfirmText);
       scheduleAutoReply(request.id, String(tg_user_id), client_name || 'Estimado/a', profile.name);
     }
 
-    // Send alert to Telegram Admins (with receipt photo if attached)
+    // Botón interactivo para que la Administradora le escriba directamente al privado del cliente
+    const replyButtons: any[][] = [];
+    const cleanClientUser = client_telegram ? client_telegram.replace('@', '').trim() : '';
+    if (cleanClientUser) {
+      replyButtons.push([
+        { text: `💬 Escribir al Privado de @${cleanClientUser}`, url: `https://t.me/${cleanClientUser}` }
+      ]);
+    } else if (tg_user_id) {
+      replyButtons.push([
+        { text: `💬 Escribir al Privado del Cliente`, url: `tg://user?id=${tg_user_id}` }
+      ]);
+    }
+
+    // Alerta detallada para la Administradora con todos los datos del cliente
     const adminNotice = `
-🔔 *NUEVA SOLICITUD Y COMPROBANTE DE COMISIÓN* 🔔
+🔔 *NUEVA RESERVA Y COMPROBANTE DE COMISIÓN* 🔔
 
-👤 *Cliente*: ${client_name || 'Anónimo'} ${client_telegram ? '(@' + client_telegram.replace('@', '') + ')' : ''}
-🆔 *Telegram ID*: \`${tg_user_id || 'No detectado'}\`
-👠 *Perfil*: ${profile.name} (TARIFA SERVICIO: Bs. ${profile.rate_bs})
+👠 *Modelo / Dama*: *${profile.name}*
 🏷️ *Comisión de Reserva*: *Bs. ${profile.commission_bs}*
-${receipt_url ? '📸 *Comprobante de Pago Adjuntado*: Sí' : '📸 *Comprobante*: No adjuntado'}
-📝 *Mensaje del Cliente*: ${notes || 'Sin observaciones'}
-📅 *Fecha*: ${new Date().toLocaleString()}
+💰 *Tarifa de Servicio*: Bs. ${profile.rate_bs}
 
-💬 _Para responder al cliente enviándole el QR de COMISIÓN, escribe:_\n\`/qr ${tg_user_id || 'ID_CLIENTE'}\`
-    `;
+👤 *DATOS DEL CLIENTE PARA CONTACTARLE:*
+• *Nombre*: ${client_name || 'Cliente Catálogo'}
+• *Usuario Telegram*: ${cleanClientUser ? '@' + cleanClientUser : 'No configurado'}
+• *ID de Telegram*: \`${tg_user_id || 'No detectado'}\`
+${cleanClientUser ? `👉 *Chat Privado:* https://t.me/${cleanClientUser}` : (tg_user_id ? `👉 *Chat Privado:* tg://user?id=${tg_user_id}` : '')}
 
-    for (const adminId of config.adminIds) {
-      if (adminId) {
+📝 *Mensaje del Cliente*:
+"${notes || 'Sin observaciones'}"
+
+📸 *Comprobante de Pago*: ${receipt_url ? 'Adjuntado (validado)' : 'No recibido'}
+📅 *Fecha*: ${new Date().toLocaleString('es-BO', { timeZone: 'America/La_Paz' })}
+
+💬 _Toca el botón abajo para abrir directamente la conversación privada con el cliente y escribirle._
+    `.trim();
+
+    // Enviar a todos los administradores registrados
+    const adminRecipients = new Set<string>();
+    for (const aId of config.adminIds) {
+      if (aId) adminRecipients.add(String(aId));
+    }
+    const lastAdminChat = getSystemSetting('last_admin_chat_id');
+    if (lastAdminChat) adminRecipients.add(String(lastAdminChat));
+
+    // Si aún no se ha detectado el ID del admin, enviar también al canal administrativo como respaldo
+    if (adminRecipients.size === 0 && config.channelId) {
+      adminRecipients.add(String(config.channelId));
+    }
+
+    const replyMarkup = replyButtons.length > 0 ? { inline_keyboard: replyButtons } : undefined;
+
+    for (const adminId of adminRecipients) {
+      try {
         if (receipt_url) {
           const fullReceiptUrl = receipt_url.startsWith('http') ? receipt_url : `${config.baseUrl}${receipt_url}`;
-          await sendPhotoToUser(adminId, fullReceiptUrl, adminNotice);
+          await sendPhotoToUser(adminId, fullReceiptUrl, adminNotice, {
+            reply_markup: replyMarkup
+          });
         } else {
-          await sendMessage(adminId, adminNotice);
+          await sendMessage(adminId, adminNotice, {
+            reply_markup: replyMarkup
+          });
         }
+      } catch (adminSendErr) {
+        console.error(`[Error notifying admin ${adminId}]:`, adminSendErr);
       }
     }
 
@@ -741,9 +783,12 @@ router.post('/admin/settings', requireAdminAuth, async (req: Request, res: Respo
     if (auto_reply_delay_minutes !== undefined) {
       saveSystemSetting('auto_reply_delay_minutes', String(auto_reply_delay_minutes));
     }
-    const { publish_destination } = req.body;
+    const { publish_destination, admin_telegram_ids } = req.body;
     if (publish_destination !== undefined) {
       saveSystemSetting('publish_destination', String(publish_destination));
+    }
+    if (admin_telegram_ids !== undefined) {
+      saveSystemSetting('admin_telegram_ids', String(admin_telegram_ids).trim());
     }
 
     const adminId = (req as any).adminUserId || 'Admin Web';
@@ -756,6 +801,7 @@ router.post('/admin/settings', requireAdminAuth, async (req: Request, res: Respo
       success: true,
       bot_username: updatedConfig.username,
       admin_contact_username: getSystemSetting('admin_contact_username') || 'danii001',
+      admin_telegram_ids: getSystemSetting('admin_telegram_ids') || '',
       telegram_only_access: isTelegramOnly,
       auto_reply_delay_minutes: autoReplyDelay,
       publish_destination: getSystemSetting('publish_destination') || 'bot_and_channel',

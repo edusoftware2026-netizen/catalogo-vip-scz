@@ -308,7 +308,7 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
                   </h3>
                 </div>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Dama: <strong className="text-amber-300">{profile.name}</strong> · Monto Reserva: <strong className="text-amber-400 font-mono">Bs. {profile.commission_bs}</strong>
+                  Dama: <strong className="text-amber-300">{profile.name}</strong>
                 </p>
               </div>
               
@@ -346,31 +346,30 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
                       <span className="text-emerald-400 font-bold font-mono">Bs. {profile.commission_bs}</span>
                     </div>
                     <div className="flex justify-between text-zinc-400">
-                      <span>Administradora:</span>
-                      <span className="text-amber-400 font-bold">@{cleanAdmin}</span>
+                      <span>Estado:</span>
+                      <span className="text-amber-400 font-bold">Enviado a la Administradora</span>
                     </div>
                   </div>
 
-                  <div className="pt-4 space-y-3 max-w-md mx-auto">
-                    <a
-                      href={`https://t.me/${cleanAdmin}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center gap-2 w-full py-4 px-5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs sm:text-sm font-bold transition-all shadow-lg shadow-sky-500/20 cursor-pointer"
-                    >
-                      <MessageSquare className="w-4 h-4" />
-                      Contactar a @{cleanAdmin} en Telegram
-                    </a>
+                  <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl max-w-md mx-auto text-center space-y-1">
+                    <p className="text-xs sm:text-sm text-amber-200 font-semibold">
+                      Comprobante recibido correctamente
+                    </p>
+                    <p className="text-[11px] sm:text-xs text-zinc-400">
+                      La Administradora verificará tu comprobante y te escribirá directamente por mensaje privado a tu cuenta de Telegram.
+                    </p>
+                  </div>
 
+                  <div className="pt-2 max-w-md mx-auto">
                     <button
                       type="button"
                       onClick={() => {
                         setShowQrModal(false);
                         onClose();
                       }}
-                      className="w-full py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition-colors cursor-pointer"
+                      className="w-full py-4 px-5 rounded-xl bg-linear-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-zinc-950 font-bold text-xs sm:text-sm transition-all shadow-lg shadow-amber-500/20 cursor-pointer"
                     >
-                      Finalizar y Volver al Catálogo
+                      Entendido, Volver al Catálogo
                     </button>
                   </div>
                 </div>
@@ -495,26 +494,22 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
                 <div className="space-y-5 animate-in fade-in duration-200">
                   
                   {/* CAJA DE CÓDIGO QR Y PRECIO */}
-                  <div className="p-5 rounded-2xl bg-zinc-950 border border-amber-500/40 text-center space-y-4">
-                    <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold">
-                      <QrCode className="w-4 h-4 text-amber-400" />
-                      CÓDIGO QR OFICIAL
-                    </div>
+                  <div className="p-5 sm:p-6 rounded-2xl bg-zinc-950 border border-amber-500/40 text-center space-y-4">
 
-                    {/* Visor de QR */}
+                    {/* Visor de QR Ampliado */}
                     <div className="flex justify-center items-center">
                       {qrImageUrl ? (
-                        <div className="p-3 bg-white rounded-2xl shadow-xl border border-amber-500/30 max-w-52">
+                        <div className="p-4 sm:p-5 bg-white rounded-2xl shadow-2xl border-2 border-amber-500/40 max-w-xs sm:max-w-sm w-full mx-auto">
                           <img
                             src={qrImageUrl}
-                            alt="QR Oficial de Pago"
-                            className="w-44 h-44 sm:w-48 sm:h-48 object-contain mx-auto"
+                            alt="QR de Pago"
+                            className="w-64 h-64 sm:w-72 sm:h-72 object-contain mx-auto"
                           />
                         </div>
                       ) : (
-                        <div className="w-44 h-44 bg-zinc-900 border border-dashed border-zinc-700 rounded-2xl flex flex-col items-center justify-center p-3 text-zinc-500 text-center">
-                          <QrCode className="w-10 h-10 mb-1 opacity-40" />
-                          <span className="text-xs leading-tight">Solicita el QR directamente a @{cleanAdmin}</span>
+                        <div className="w-64 h-64 sm:w-72 sm:h-72 bg-zinc-900 border border-dashed border-zinc-700 rounded-2xl flex flex-col items-center justify-center p-4 text-zinc-500 text-center mx-auto">
+                          <QrCode className="w-12 h-12 mb-2 opacity-40" />
+                          <span className="text-xs leading-tight">Cargando código QR oficial...</span>
                         </div>
                       )}
                     </div>
@@ -589,7 +584,7 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
                     {/* Mensaje breve para la administradora */}
                     <div>
                       <label className="block text-xs font-semibold text-zinc-300 mb-1.5 text-left">
-                        Mensaje breve para la Administradora (@{cleanAdmin}):
+                        Mensaje opcional para la Administradora:
                       </label>
                       <textarea
                         rows={2}

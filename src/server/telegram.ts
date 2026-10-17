@@ -20,7 +20,8 @@ import {
   createCustomerRequest,
   addAuditLog,
   addSyncError,
-  getSystemSetting
+  getSystemSetting,
+  saveSystemSetting
 } from './db.js';
 import { Profile, ProfileStatus } from '../types.js';
 
@@ -39,8 +40,13 @@ export function getBotConfig() {
   }
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET || 'secret_token_santa_cruz';
   const channelId = process.env.CHANNEL_ID || getSystemSetting('channel_id') || '-1003998507870';
-  const adminIds = (process.env.ADMIN_TELEGRAM_IDS || '')
-    .split(',')
+  const envAdminIds = (process.env.ADMIN_TELEGRAM_IDS || '').split(',');
+  const settingAdminIds = (getSystemSetting('admin_telegram_ids') || '').split(',');
+  const lastAdminChatId = getSystemSetting('last_admin_chat_id');
+  const allIds = [...envAdminIds, ...settingAdminIds];
+  if (lastAdminChatId) allIds.push(lastAdminChatId);
+
+  const adminIds = Array.from(new Set(allIds))
     .map(id => id.trim())
     .filter(Boolean);
   const signingSecret = process.env.ADMIN_SIGNING_SECRET || 'secret_jwt_key_santa_cruz';
@@ -294,12 +300,13 @@ ${profile.description}
   }
 }
 
-export async function sendPhotoToUser(chatId: string | number, photoUrl: string, caption?: string) {
+export async function sendPhotoToUser(chatId: string | number, photoUrl: string, caption?: string, options: any = {}) {
   return await callTelegramApi('sendPhoto', {
     chat_id: chatId,
     photo: photoUrl,
     caption: caption || '',
-    parse_mode: 'Markdown'
+    parse_mode: 'Markdown',
+    ...options
   });
 }
 
@@ -345,6 +352,24 @@ export async function processTelegramUpdate(update: any) {
   const chatId = message.chat.id;
   const fromId = message.from?.id;
   const text = message.text ? message.text.trim() : '';
+
+  // Auto-registro de la Administradora cuando interactúa con el Bot
+  const fromUser = message.from;
+  const fromUsername = (fromUser?.username || '').replace(/^@/, '').toLowerCase();
+  const cleanAdminUser = (getSystemSetting('admin_contact_username') || 'danii001').toLowerCase();
+
+  if (fromId && (fromUsername === cleanAdminUser || isAdminUser(fromId))) {
+    try {
+      await saveSystemSetting('last_admin_chat_id', String(chatId));
+      const currentSetting = (getSystemSetting('admin_telegram_ids') || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (!currentSetting.includes(String(chatId))) {
+        currentSetting.push(String(chatId));
+        await saveSystemSetting('admin_telegram_ids', currentSetting.join(','));
+      }
+    } catch (saveErr) {
+      console.warn('[Admin Auto-Register Warning]:', saveErr);
+    }
+  }
 
   // 1. Deep Link Client Request handling (e.g., /start req_prof_scz_01 or /reservar prof_scz_01)
   if (text.startsWith('/start req_') || text.startsWith('/start pago_') || text.startsWith('/reservar ') || text.startsWith('/pago ')) {

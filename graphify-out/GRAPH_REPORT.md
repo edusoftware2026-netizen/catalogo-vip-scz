@@ -1,17 +1,17 @@
 # Graph Report - catalogo-vip-scz  (2026-10-17)
 
 ## Corpus Check
-- 25 files · ~224,040 words
+- 25 files · ~224,327 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 3, .example 1, .lock 1)
 
 ## Summary
-- 228 nodes · 495 edges · 10 communities
+- 228 nodes · 497 edges · 10 communities
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 3 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1784a29d`
+- Built from commit: `52c6408d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -28,7 +28,7 @@
 - scripts
 
 ## God Nodes (most connected - your core abstractions)
-1. `processTelegramUpdate()` - 29 edges
+1. `processTelegramUpdate()` - 30 edges
 2. `getDb()` - 26 edges
 3. `sendMessage()` - 19 edges
 4. `getProfileById()` - 18 edges
@@ -114,6 +114,6 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `package.json` be split into smaller, more focused modules?**
   _Cohesion score 0.05647840531561462 - nodes in this community are weakly interconnected._
 - **Why does `@libsql/client` connect `package.json` to `db.ts`?**
-  _High betweenness centrality (0.068) - this node is a cross-community bridge._
+  _High betweenness centrality (0.067) - this node is a cross-community bridge._
 - **Should `db.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.1265597147950089 - nodes in this community are weakly interconnected._

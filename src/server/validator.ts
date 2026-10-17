@@ -184,3 +184,4 @@ Responde ÚNICAMENTE en JSON con este formato exacto:
     }
   };
 }
+

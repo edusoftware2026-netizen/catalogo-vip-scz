@@ -1,0 +1,340 @@
+{
+  "communities": {
+    "0": [
+      "ref_crypto",
+      "ref_dns",
+      "ref_https",
+      "server_startserver",
+      "src_server_db_clearconversationstate",
+      "src_server_db_getconversationstate",
+      "src_server_db_getprofilebyid",
+      "src_server_db_getsystemsetting",
+      "src_server_db_saveprofile",
+      "src_server_db_setconversationstate",
+      "src_server_routes_scheduleautoreply",
+      "src_server_telegram",
+      "src_server_telegram_calltelegramapi",
+      "src_server_telegram_generateadminmagictoken",
+      "src_server_telegram_getbotconfig",
+      "src_server_telegram_gettelegramfileurl",
+      "src_server_telegram_handlecallbackquery",
+      "src_server_telegram_handleclientavailabilityrequest",
+      "src_server_telegram_handleconfirmdeletecommand",
+      "src_server_telegram_handleconversationstep",
+      "src_server_telegram_handlelistprofiles",
+      "src_server_telegram_handlemanagephotoscommand",
+      "src_server_telegram_handlepausecommand",
+      "src_server_telegram_handlepromptstatuschange",
+      "src_server_telegram_handlepublishcommand",
+      "src_server_telegram_handleretirecommand",
+      "src_server_telegram_handleshowprofiledetail",
+      "src_server_telegram_handlestarteditprofile",
+      "src_server_telegram_httpspostjson",
+      "src_server_telegram_isadminuser",
+      "src_server_telegram_pinchatmessage",
+      "src_server_telegram_processtelegramupdate",
+      "src_server_telegram_registerbotwebhook",
+      "src_server_telegram_sendadminhelp",
+      "src_server_telegram_sendadminwelcome",
+      "src_server_telegram_sendmessage",
+      "src_server_telegram_sendphototouser",
+      "src_server_telegram_syncprofiletochannel",
+      "src_server_telegram_updatebotmenubutton",
+      "src_server_telegram_uploads_dir"
+    ],
+    "1": [
+      "ref_lucide_react",
+      "ref_react",
+      "src_app",
+      "src_app_app",
+      "src_components_adminpanel",
+      "src_components_adminpanel_adminpanel",
+      "src_components_adminpanel_adminpanelprops",
+      "src_components_adminpanel_admintab",
+      "src_components_agemodal",
+      "src_components_agemodal_agemodal",
+      "src_components_agemodal_agemodalprops",
+      "src_components_header",
+      "src_components_header_header",
+      "src_components_header_headerprops",
+      "src_components_profilecard",
+      "src_components_profilecard_profilecard",
+      "src_components_profilecard_profilecardprops",
+      "src_components_profiledetailmodal",
+      "src_components_profiledetailmodal_profiledetailmodal",
+      "src_components_profiledetailmodal_profiledetailmodalprops",
+      "src_components_requestmodal",
+      "src_components_requestmodal_requestmodal",
+      "src_components_requestmodal_requestmodalprops",
+      "src_components_requestmodal_telegramusercontext",
+      "src_components_telegramgate",
+      "src_components_telegramgate_telegramgate",
+      "src_components_telegramgate_telegramgateprops",
+      "src_index",
+      "src_main",
+      "src_types",
+      "src_types_adminsession",
+      "src_types_auditlog",
+      "src_types_botstatusinfo",
+      "src_types_conversationstate",
+      "src_types_customerrequest",
+      "src_types_profile",
+      "src_types_profilestatus",
+      "src_types_requeststatus",
+      "src_types_syncerrorlog"
+    ],
+    "2": [
+      "package",
+      "package_name",
+      "package_private",
+      "package_type",
+      "package_version",
+      "ref_autoprefixer",
+      "ref_cors",
+      "ref_dotenv",
+      "ref_esbuild",
+      "ref_express",
+      "ref_google_genai",
+      "ref_jsonwebtoken",
+      "ref_motion",
+      "ref_multer",
+      "ref_path",
+      "ref_react_dom",
+      "ref_sql_js",
+      "ref_tailwindcss",
+      "ref_tailwindcss_vite",
+      "ref_tsx",
+      "ref_types_cors",
+      "ref_types_express",
+      "ref_types_jsonwebtoken",
+      "ref_types_multer",
+      "ref_types_node",
+      "ref_types_react",
+      "ref_types_react_dom",
+      "ref_types_sql_js",
+      "ref_typescript",
+      "ref_vite",
+      "ref_vitejs_plugin_react",
+      "server",
+      "src_server_routes_router",
+      "vite_config"
+    ],
+    "3": [
+      "ref_fs",
+      "src_server_db",
+      "src_server_db_addauditlog",
+      "src_server_db_addcommissionlog",
+      "src_server_db_addsyncerror",
+      "src_server_db_commissionlog",
+      "src_server_db_createcustomerrequest",
+      "src_server_db_data_dir",
+      "src_server_db_db_file",
+      "src_server_db_deleteprofile",
+      "src_server_db_ensuredefaultsettings",
+      "src_server_db_getallprofiles",
+      "src_server_db_getauditlogs",
+      "src_server_db_getcommissionlogs",
+      "src_server_db_getcustomerrequestbyid",
+      "src_server_db_getcustomerrequests",
+      "src_server_db_getdb",
+      "src_server_db_getpublicprofiles",
+      "src_server_db_getsyncerrors",
+      "src_server_db_inittables",
+      "src_server_db_normalizephotourls",
+      "src_server_db_savedb",
+      "src_server_db_savesystemsetting",
+      "src_server_db_seedinitialdata",
+      "src_server_db_updatecustomerrequeststatus",
+      "src_server_routes",
+      "src_server_routes_broadcastevent",
+      "src_server_routes_requireadminauth",
+      "src_server_routes_sseclients",
+      "src_server_routes_storage",
+      "src_server_routes_upload",
+      "src_server_routes_uploaddir",
+      "src_server_telegram_verifyadmintoken"
+    ],
+    "4": [
+      "tsconfig",
+      "tsconfig_compileroptions",
+      "tsconfig_compileroptions_allowimportingtsextensions",
+      "tsconfig_compileroptions_allowjs",
+      "tsconfig_compileroptions_experimentaldecorators",
+      "tsconfig_compileroptions_isolatedmodules",
+      "tsconfig_compileroptions_jsx",
+      "tsconfig_compileroptions_lib",
+      "tsconfig_compileroptions_module",
+      "tsconfig_compileroptions_moduledetection",
+      "tsconfig_compileroptions_moduleresolution",
+      "tsconfig_compileroptions_noemit",
+      "tsconfig_compileroptions_paths",
+      "tsconfig_compileroptions_skiplibcheck",
+      "tsconfig_compileroptions_target",
+      "tsconfig_compileroptions_usedefineforclassfields"
+    ],
+    "5": [
+      "package_dependencies",
+      "package_dependencies_cors",
+      "package_dependencies_dotenv",
+      "package_dependencies_express",
+      "package_dependencies_google_genai",
+      "package_dependencies_jsonwebtoken",
+      "package_dependencies_lucide_react",
+      "package_dependencies_motion",
+      "package_dependencies_multer",
+      "package_dependencies_react",
+      "package_dependencies_react_dom",
+      "package_dependencies_sql_js",
+      "package_dependencies_tailwindcss_vite",
+      "package_dependencies_vite",
+      "package_dependencies_vitejs_plugin_react"
+    ],
+    "6": [
+      "package_devdependencies",
+      "package_devdependencies_autoprefixer",
+      "package_devdependencies_esbuild",
+      "package_devdependencies_tailwindcss",
+      "package_devdependencies_tsx",
+      "package_devdependencies_types_cors",
+      "package_devdependencies_types_express",
+      "package_devdependencies_types_jsonwebtoken",
+      "package_devdependencies_types_multer",
+      "package_devdependencies_types_node",
+      "package_devdependencies_types_react",
+      "package_devdependencies_types_react_dom",
+      "package_devdependencies_types_sql_js",
+      "package_devdependencies_typescript"
+    ],
+    "7": [
+      "package_scripts",
+      "package_scripts_build",
+      "package_scripts_clean",
+      "package_scripts_dev",
+      "package_scripts_lint",
+      "package_scripts_start"
+    ]
+  },
+  "cohesion": {
+    "0": 0.16666666666666666,
+    "1": 0.11470985155195682,
+    "2": 0.06951871657754011,
+    "3": 0.13825757575757575,
+    "4": 0.125,
+    "5": 0.13333333333333333,
+    "6": 0.14285714285714285,
+    "7": 0.3333333333333333
+  },
+  "gods": [
+    {
+      "id": "src_server_telegram_processtelegramupdate",
+      "label": "processTelegramUpdate()",
+      "degree": 26
+    },
+    {
+      "id": "src_server_db_getdb",
+      "label": "getDb()",
+      "degree": 25
+    },
+    {
+      "id": "src_server_telegram_sendmessage",
+      "label": "sendMessage()",
+      "degree": 19
+    },
+    {
+      "id": "src_server_db_getprofilebyid",
+      "label": "getProfileById()",
+      "degree": 16
+    },
+    {
+      "id": "tsconfig_compileroptions",
+      "label": "compilerOptions",
+      "degree": 15
+    },
+    {
+      "id": "src_server_telegram_syncprofiletochannel",
+      "label": "syncProfileToChannel()",
+      "degree": 14
+    },
+    {
+      "id": "src_server_db_saveprofile",
+      "label": "saveProfile()",
+      "degree": 13
+    },
+    {
+      "id": "src_server_telegram_getbotconfig",
+      "label": "getBotConfig()",
+      "degree": 13
+    },
+    {
+      "id": "src_server_db_savedb",
+      "label": "saveDb()",
+      "degree": 12
+    },
+    {
+      "id": "src_server_telegram_calltelegramapi",
+      "label": "callTelegramApi()",
+      "degree": 11
+    }
+  ],
+  "surprises": [
+    {
+      "source": "startServer()",
+      "target": "getDb()",
+      "source_files": [
+        "server.ts",
+        "src/server/db.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "startServer()",
+      "target": "registerBotWebhook()",
+      "source_files": [
+        "server.ts",
+        "src/server/telegram.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "connects across different repos/directories"
+    },
+    {
+      "source": "startServer()",
+      "target": "updateBotMenuButton()",
+      "source_files": [
+        "server.ts",
+        "src/server/telegram.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "connects across different repos/directories"
+    },
+    {
+      "source": "ProfileCardProps",
+      "target": "Profile",
+      "source_files": [
+        "src/components/ProfileCard.tsx",
+        "src/types.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "peripheral node `ProfileCardProps` unexpectedly reaches hub `Profile`"
+    },
+    {
+      "source": "ProfileDetailModalProps",
+      "target": "Profile",
+      "source_files": [
+        "src/components/ProfileDetailModal.tsx",
+        "src/types.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "peripheral node `ProfileDetailModalProps` unexpectedly reaches hub `Profile`"
+    }
+  ],
+  "tokens": {
+    "input": 0,
+    "output": 0
+  }
+}

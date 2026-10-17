@@ -40,3 +40,4 @@ Thumbs.db
 
 # Archivos temporales de agentes y scratch
 scratch/
+graphify-out/cache/

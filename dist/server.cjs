@@ -57,22 +57,43 @@ __export(db_exports, {
 });
 async function getDb() {
   if (client) return client;
-  const tursoUrl = process.env.TURSO_DATABASE_URL;
-  const tursoAuthToken = process.env.TURSO_AUTH_TOKEN;
+  const rawUrl = process.env.TURSO_DATABASE_URL;
+  const rawToken = process.env.TURSO_AUTH_TOKEN || process.env.TURSO_TOKEN;
+  const tursoUrl = rawUrl ? rawUrl.trim().replace(/^["']|["']$/g, "") : void 0;
+  const tursoAuthToken = rawToken ? rawToken.trim().replace(/^["']|["']$/g, "") : void 0;
+  let tursoSuccess = false;
   if (tursoUrl) {
-    console.log(`[Turso DB] Conectando a Turso Cloud Database: ${tursoUrl.replace(/\/\/[^@]*@/, "//***@")}`);
-    client = (0, import_client.createClient)({
-      url: tursoUrl,
-      authToken: tursoAuthToken
-    });
-  } else {
+    if (!tursoAuthToken) {
+      console.warn("\u26A0\uFE0F [Turso DB] TURSO_DATABASE_URL est\xE1 configurado pero falta TURSO_AUTH_TOKEN en las variables de entorno.");
+      console.warn("\u26A0\uFE0F [Turso DB] Para conectar a Turso Cloud debes agregar la variable TURSO_AUTH_TOKEN en el panel de Render.");
+    } else {
+      console.log(`[Turso DB] Conectando a Turso Cloud Database: ${tursoUrl.replace(/\/\/[^@]*@/, "//***@")}`);
+      try {
+        const cloudClient = (0, import_client.createClient)({
+          url: tursoUrl,
+          authToken: tursoAuthToken
+        });
+        await cloudClient.execute("SELECT 1");
+        client = cloudClient;
+        isCloudTurso = true;
+        tursoSuccess = true;
+        console.log("\u2705 [Turso DB] Autenticaci\xF3n y conexi\xF3n exitosa con Turso Cloud.");
+      } catch (authErr) {
+        console.error("\u274C [Turso DB Auth Error]: Error de autenticaci\xF3n con Turso Cloud:", authErr?.message || authErr);
+        console.warn("\u26A0\uFE0F [Turso DB Fallback] Aseg\xFArate de que TURSO_AUTH_TOKEN en Render sea el token JWT completo y sin comillas adicionales.");
+        console.warn("\u26A0\uFE0F [Turso DB Fallback] Iniciando temporalmente con SQLite local de respaldo para que la app no se detenga.");
+      }
+    }
+  }
+  if (!client || !tursoSuccess) {
     if (!import_fs.default.existsSync(DATA_DIR)) {
       import_fs.default.mkdirSync(DATA_DIR, { recursive: true });
     }
-    console.log(`[Local SQLite DB] Usando archivo local: ${DB_FILE}`);
+    console.log(`[Local SQLite DB] Usando archivo local de respaldo: ${DB_FILE}`);
     client = (0, import_client.createClient)({
       url: `file:${DB_FILE}`
     });
+    isCloudTurso = false;
   }
   await initTables(client);
   await seedInitialData(client);
@@ -577,8 +598,11 @@ async function getCommissionLogs() {
   }));
 }
 function getDbInfo() {
-  const tursoUrl = process.env.TURSO_DATABASE_URL;
-  if (tursoUrl) {
+  const rawUrl = process.env.TURSO_DATABASE_URL;
+  const rawToken = process.env.TURSO_AUTH_TOKEN || process.env.TURSO_TOKEN;
+  const tursoUrl = rawUrl ? rawUrl.trim().replace(/^["']|["']$/g, "") : void 0;
+  const tursoAuthToken = rawToken ? rawToken.trim().replace(/^["']|["']$/g, "") : void 0;
+  if (isCloudTurso && tursoUrl) {
     const host = tursoUrl.replace(/^libsql:\/\//, "").replace(/^https?:\/\//, "");
     return {
       type: "turso",
@@ -593,7 +617,8 @@ function getDbInfo() {
     is_cloud: false,
     label: "SQLite Local",
     host: "data/catalogo.sqlite",
-    status: "connected"
+    status: "connected",
+    warning: tursoUrl && !tursoAuthToken ? "Falta variable TURSO_AUTH_TOKEN en Render" : void 0
   };
 }
 async function pingDb() {
@@ -607,7 +632,7 @@ async function pingDb() {
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   };
 }
-var import_client, import_fs, import_path, DATA_DIR, DB_FILE, client, settingsCache;
+var import_client, import_fs, import_path, DATA_DIR, DB_FILE, client, isCloudTurso, settingsCache;
 var init_db = __esm({
   "src/server/db.ts"() {
     import_client = require("@libsql/client");
@@ -616,6 +641,7 @@ var init_db = __esm({
     DATA_DIR = import_path.default.join(process.cwd(), "data");
     DB_FILE = import_path.default.join(DATA_DIR, "catalogo.sqlite");
     client = null;
+    isCloudTurso = false;
     settingsCache = /* @__PURE__ */ new Map();
   }
 });

@@ -7,6 +7,7 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'catalogo.sqlite');
 
 let client: Client | null = null;
+let isCloudTurso = false;
 const settingsCache = new Map<string, string>();
 
 /**
@@ -15,23 +16,49 @@ const settingsCache = new Map<string, string>();
 export async function getDb(): Promise<Client> {
   if (client) return client;
 
-  const tursoUrl = process.env.TURSO_DATABASE_URL;
-  const tursoAuthToken = process.env.TURSO_AUTH_TOKEN;
+  const rawUrl = process.env.TURSO_DATABASE_URL;
+  const rawToken = process.env.TURSO_AUTH_TOKEN || process.env.TURSO_TOKEN;
+
+  // Sanitizar URL y token (eliminar espacios y comillas accidentales que a veces se copian en Render)
+  const tursoUrl = rawUrl ? rawUrl.trim().replace(/^["']|["']$/g, '') : undefined;
+  const tursoAuthToken = rawToken ? rawToken.trim().replace(/^["']|["']$/g, '') : undefined;
+
+  let tursoSuccess = false;
 
   if (tursoUrl) {
-    console.log(`[Turso DB] Conectando a Turso Cloud Database: ${tursoUrl.replace(/\/\/[^@]*@/, '//***@')}`);
-    client = createClient({
-      url: tursoUrl,
-      authToken: tursoAuthToken
-    });
-  } else {
+    if (!tursoAuthToken) {
+      console.warn('⚠️ [Turso DB] TURSO_DATABASE_URL está configurado pero falta TURSO_AUTH_TOKEN en las variables de entorno.');
+      console.warn('⚠️ [Turso DB] Para conectar a Turso Cloud debes agregar la variable TURSO_AUTH_TOKEN en el panel de Render.');
+    } else {
+      console.log(`[Turso DB] Conectando a Turso Cloud Database: ${tursoUrl.replace(/\/\/[^@]*@/, '//***@')}`);
+      try {
+        const cloudClient = createClient({
+          url: tursoUrl,
+          authToken: tursoAuthToken
+        });
+        // Probar la conexión inmediatamente para verificar autenticación (401)
+        await cloudClient.execute("SELECT 1");
+        client = cloudClient;
+        isCloudTurso = true;
+        tursoSuccess = true;
+        console.log('✅ [Turso DB] Autenticación y conexión exitosa con Turso Cloud.');
+      } catch (authErr: any) {
+        console.error('❌ [Turso DB Auth Error]: Error de autenticación con Turso Cloud:', authErr?.message || authErr);
+        console.warn('⚠️ [Turso DB Fallback] Asegúrate de que TURSO_AUTH_TOKEN en Render sea el token JWT completo y sin comillas adicionales.');
+        console.warn('⚠️ [Turso DB Fallback] Iniciando temporalmente con SQLite local de respaldo para que la app no se detenga.');
+      }
+    }
+  }
+
+  if (!client || !tursoSuccess) {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    console.log(`[Local SQLite DB] Usando archivo local: ${DB_FILE}`);
+    console.log(`[Local SQLite DB] Usando archivo local de respaldo: ${DB_FILE}`);
     client = createClient({
       url: `file:${DB_FILE}`
     });
+    isCloudTurso = false;
   }
 
   await initTables(client);
@@ -608,8 +635,12 @@ export async function getCommissionLogs(): Promise<CommissionLog[]> {
 }
 
 export function getDbInfo() {
-  const tursoUrl = process.env.TURSO_DATABASE_URL;
-  if (tursoUrl) {
+  const rawUrl = process.env.TURSO_DATABASE_URL;
+  const rawToken = process.env.TURSO_AUTH_TOKEN || process.env.TURSO_TOKEN;
+  const tursoUrl = rawUrl ? rawUrl.trim().replace(/^["']|["']$/g, '') : undefined;
+  const tursoAuthToken = rawToken ? rawToken.trim().replace(/^["']|["']$/g, '') : undefined;
+
+  if (isCloudTurso && tursoUrl) {
     const host = tursoUrl.replace(/^libsql:\/\//, '').replace(/^https?:\/\//, '');
     return {
       type: 'turso',
@@ -624,7 +655,8 @@ export function getDbInfo() {
     is_cloud: false,
     label: 'SQLite Local',
     host: 'data/catalogo.sqlite',
-    status: 'connected'
+    status: 'connected',
+    warning: (tursoUrl && !tursoAuthToken) ? 'Falta variable TURSO_AUTH_TOKEN en Render' : undefined
   };
 }
 

@@ -1,7 +1,7 @@
 # Graph Report - catalogo-vip-scz  (2026-10-17)
 
 ## Corpus Check
-- 24 files · ~210,092 words
+- 24 files · ~222,314 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 3, .example 1, .lock 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `728b0175`
+- Built from commit: `c4a88a0a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

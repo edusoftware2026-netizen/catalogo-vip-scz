@@ -155,7 +155,7 @@ export async function registerBotWebhook() {
 
 // Telegram Channel Sync Function
 export async function syncProfileToChannel(profileId: string, performer: string = 'Bot Admin'): Promise<{ success: boolean; message: string; telegramMessageId?: number }> {
-  const { channelId, username, baseUrl } = getBotConfig();
+  const { channelId, username, baseUrl, token } = getBotConfig();
   const profile = await getProfileById(profileId);
 
   if (!profile) {

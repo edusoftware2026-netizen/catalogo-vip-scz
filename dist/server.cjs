@@ -679,7 +679,7 @@ if (!import_fs2.default.existsSync(UPLOADS_DIR)) {
   import_fs2.default.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 function getBotConfig() {
-  const token2 = process.env.BOT_TOKEN || "";
+  const token = process.env.BOT_TOKEN || "";
   const storedUsername = getSystemSetting("bot_username");
   let username = (storedUsername || process.env.BOT_USERNAME || "CatalogoVIPSCZBot").replace(/^@/, "").trim();
   if (username.toLowerCase() === "catalogovipscz") {
@@ -690,7 +690,7 @@ function getBotConfig() {
   const adminIds = (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((id) => id.trim()).filter(Boolean);
   const signingSecret = process.env.ADMIN_SIGNING_SECRET || "secret_jwt_key_santa_cruz";
   const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || "http://localhost:3000";
-  return { token: token2, username, secret, channelId, adminIds, signingSecret, baseUrl };
+  return { token, username, secret, channelId, adminIds, signingSecret, baseUrl };
 }
 function isAdminUser(telegramUserId) {
   const { adminIds } = getBotConfig();
@@ -726,12 +726,12 @@ function httpsPostJson(url, body) {
   });
 }
 async function callTelegramApi(method, body) {
-  const { token: token2 } = getBotConfig();
-  if (!token2) {
+  const { token } = getBotConfig();
+  if (!token) {
     console.warn(`[Telegram API] Warning: BOT_TOKEN is not configured. Method called: ${method}`);
     return { ok: false, description: "BOT_TOKEN is not configured in environment variables" };
   }
-  const url = `https://api.telegram.org/bot${token2}/${method}`;
+  const url = `https://api.telegram.org/bot${token}/${method}`;
   try {
     const data = await httpsPostJson(url, body);
     return data;
@@ -788,7 +788,7 @@ async function registerBotWebhook() {
   });
 }
 async function syncProfileToChannel(profileId, performer = "Bot Admin") {
-  const { channelId, username, baseUrl } = getBotConfig();
+  const { channelId, username, baseUrl, token } = getBotConfig();
   const profile = await getProfileById(profileId);
   if (!profile) {
     return { success: false, message: "Perfil no encontrado en la base de datos" };
@@ -918,13 +918,13 @@ function generateAdminMagicToken(telegramUserId) {
     { expiresIn: "4h" }
   );
 }
-function verifyAdminToken(token2) {
-  if (token2 === "admin_session_dani2026" || token2 === "dani2026") {
+function verifyAdminToken(token) {
+  if (token === "admin_session_dani2026" || token === "dani2026") {
     return { valid: true, userId: "admin_web" };
   }
   const { signingSecret } = getBotConfig();
   try {
-    const decoded = import_jsonwebtoken.default.verify(token2, signingSecret);
+    const decoded = import_jsonwebtoken.default.verify(token, signingSecret);
     if (decoded && decoded.role === "admin") {
       return { valid: true, userId: decoded.sub };
     }
@@ -1401,14 +1401,14 @@ Sincronizaci\xF3n ejecutada en la web y canal.`);
   }
 }
 async function getTelegramFileUrl(fileId) {
-  const { token: token2 } = getBotConfig();
-  if (!token2) {
+  const { token } = getBotConfig();
+  if (!token) {
     return "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80";
   }
   const fileData = await callTelegramApi("getFile", { file_id: fileId });
   if (fileData.ok && fileData.result?.file_path) {
     const remotePath = fileData.result.file_path;
-    return `https://api.telegram.org/file/bot${token2}/${remotePath}`;
+    return `https://api.telegram.org/file/bot${token}/${remotePath}`;
   }
   return "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80";
 }
@@ -1830,8 +1830,8 @@ var upload = (0, import_multer.default)({
 function requireAdminAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token2 = authHeader.split(" ")[1];
-    const verified = verifyAdminToken(token2);
+    const token = authHeader.split(" ")[1];
+    const verified = verifyAdminToken(token);
     if (verified.valid) {
       req.adminUserId = verified.userId;
       return next();
@@ -2015,31 +2015,31 @@ router.post("/telegram/webhook", async (req, res) => {
   }
 });
 router.post("/admin/auth/login", (req, res) => {
-  const { password, token: token2 } = req.body;
+  const { password, token } = req.body;
   const adminPassword = (process.env.ADMIN_PASSWORD || "dani2026").replace(/^["']|["']$/g, "").trim();
   const cleanPass = String(password || "").trim();
-  const cleanToken = String(token2 || "").trim();
+  const cleanToken = String(token || "").trim();
   if (cleanPass === adminPassword || cleanPass === "dani2026" || cleanToken === "dani2026") {
     const newToken = generateAdminMagicToken("admin_web");
     res.json({ success: true, token: newToken, userId: "admin_web" });
     return;
   }
-  if (token2) {
-    const verified = verifyAdminToken(token2);
+  if (token) {
+    const verified = verifyAdminToken(token);
     if (verified.valid) {
-      res.json({ success: true, token: token2, userId: verified.userId });
+      res.json({ success: true, token, userId: verified.userId });
       return;
     }
   }
   res.status(401).json({ success: false, error: "Clave de acceso incorrecta" });
 });
 router.post("/admin/auth/verify", (req, res) => {
-  const { token: token2 } = req.body;
-  if (!token2) {
+  const { token } = req.body;
+  if (!token) {
     res.status(400).json({ error: "Token no proporcionado" });
     return;
   }
-  const verified = verifyAdminToken(token2);
+  const verified = verifyAdminToken(token);
   if (verified.valid) {
     res.json({ valid: true, userId: verified.userId });
   } else {
@@ -2254,13 +2254,13 @@ router.get("/admin/logs", requireAdminAuth, async (req, res) => {
   }
 });
 router.post("/admin/webhook/setup", requireAdminAuth, async (req, res) => {
-  const { token: token2, secret, baseUrl } = getBotConfig();
-  if (!token2) {
+  const { token, secret, baseUrl } = getBotConfig();
+  if (!token) {
     res.status(400).json({ error: "BOT_TOKEN no configurado en las variables de entorno" });
     return;
   }
   const webhookUrl = `${baseUrl}/api/telegram/webhook`;
-  const tgUrl = `https://api.telegram.org/bot${token2}/setWebhook`;
+  const tgUrl = `https://api.telegram.org/bot${token}/setWebhook`;
   try {
     const response = await fetch(tgUrl, {
       method: "POST",

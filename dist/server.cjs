@@ -1959,6 +1959,60 @@ Responde \xDANICAMENTE en JSON con este formato exacto:
 }
 
 // src/server/routes.ts
+function isValidImageBuffer(buffer) {
+  try {
+    if (!buffer || buffer.length < 32) return false;
+    if (buffer[0] === 255 && buffer[1] === 216) {
+      return buffer.subarray(-2)[0] === 255 && buffer.subarray(-2)[1] === 217;
+    }
+    if (buffer.slice(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+      const width = buffer.readUInt32BE(16);
+      const height = buffer.readUInt32BE(20);
+      return buffer.slice(12, 16).toString() === "IHDR" && width > 0 && height > 0;
+    }
+    if (buffer.slice(0, 4).toString("ascii") === "RIFF" && buffer.slice(8, 12).toString("ascii") === "WEBP") return true;
+    if (buffer.slice(0, 6).toString("ascii").startsWith("GIF8")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+async function uploadFileToTelegramHost(filePath, originalName, caption) {
+  const config = getBotConfig();
+  if (!config.token) return { url: null, error: "BOT_TOKEN no configurado" };
+  const adminChat = config.adminIds && config.adminIds[0];
+  const targetChat = adminChat || config.channelId;
+  if (!targetChat) return { url: null, error: "No hay chat destino (ADMIN_IDS / CHANNEL_ID)" };
+  const fileData = import_fs4.default.readFileSync(filePath);
+  if (!isValidImageBuffer(fileData)) {
+    return { url: null, error: "El archivo de imagen est\xE1 corrupto o no es una imagen v\xE1lida (JPEG, PNG, WEBP o GIF)." };
+  }
+  let sendName = originalName || import_path3.default.basename(filePath);
+  const detectedExt = fileData[0] === 255 && fileData[1] === 216 ? ".jpg" : fileData.slice(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? ".png" : fileData.slice(8, 12).toString("ascii") === "WEBP" ? ".webp" : fileData.slice(0, 4).toString("ascii") === "GIF8" ? ".gif" : "";
+  if (detectedExt && import_path3.default.extname(sendName).toLowerCase() !== detectedExt) {
+    sendName = import_path3.default.basename(sendName, import_path3.default.extname(sendName)) + detectedExt;
+  }
+  const blob = new Blob([fileData]);
+  const formData = new FormData();
+  formData.append("chat_id", targetChat);
+  formData.append("photo", blob, sendName);
+  formData.append("caption", caption);
+  const tgRes = await fetch(`https://api.telegram.org/bot${config.token}/sendPhoto`, {
+    method: "POST",
+    body: formData
+  });
+  const tgJson = await tgRes.json();
+  if (!tgJson.ok) {
+    return { url: null, error: tgJson?.description || "Error desconocido de Telegram API" };
+  }
+  const photos = tgJson.result?.photo;
+  if (!Array.isArray(photos) || photos.length === 0) {
+    return { url: null, error: "Telegram no devolvi\xF3 el archivo de foto" };
+  }
+  const largest = photos[photos.length - 1];
+  const url = await getTelegramFileUrl(largest.file_id);
+  return { url, message_id: tgJson.result?.message_id, targetChat };
+}
 var router = import_express.default.Router();
 var sseClients = /* @__PURE__ */ new Set();
 function broadcastEvent(eventType, data) {
@@ -2101,6 +2155,7 @@ ${qrUrl ? "\u{1F4F2} *Te adjuntamos el c\xF3digo QR oficial de pago.* Por favor,
 router.post("/requests", upload.single("receipt"), async (req, res) => {
   try {
     const { profile_id, client_name, client_telegram, tg_user_id, notes } = req.body;
+    let receipt_url = req.body.receipt_url?.trim() || void 0;
     if (!profile_id) {
       res.status(400).json({ error: "El ID del perfil es requerido" });
       return;
@@ -2429,48 +2484,42 @@ router.post("/admin/profiles/:id/photos", requireAdminAuth, upload.array("photos
         }
       });
     }
+    const tgErrors = [];
     if (files && files.length > 0) {
       for (const f of files) {
         let nativeTgUrl = null;
-        if (config.token) {
-          const targetChat = config.channelId || config.adminIds && config.adminIds[0];
-          if (targetChat) {
+        try {
+          const result = await uploadFileToTelegramHost(f.path, f.originalname, `\u{1F4F8} [Media Host] ${profile.name}`);
+          nativeTgUrl = result.url;
+          if (result.error) {
+            tgErrors.push(`${f.originalname}: ${result.error}`);
+            console.warn("[Telegram sendPhoto error]:", result.error);
+          }
+          const pubMode2 = getSystemSetting("publish_destination") || "bot_and_channel";
+          if (nativeTgUrl && pubMode2 === "only_bot" && result.message_id && result.targetChat) {
             try {
-              const fileData = import_fs4.default.readFileSync(f.path);
-              const blob = new Blob([fileData]);
-              const formData = new FormData();
-              formData.append("chat_id", targetChat);
-              formData.append("photo", blob, f.originalname);
-              formData.append("caption", `\u{1F4F8} [Media Host] ${profile.name}`);
-              const tgRes = await fetch(`https://api.telegram.org/bot${config.token}/sendPhoto`, {
-                method: "POST",
-                body: formData
-              });
-              const tgJson = await tgRes.json();
-              if (tgJson.ok && tgJson.result?.photo?.length > 0) {
-                const largest = tgJson.result.photo[tgJson.result.photo.length - 1];
-                nativeTgUrl = await getTelegramFileUrl(largest.file_id);
-                const pubMode2 = getSystemSetting("publish_destination") || "bot_and_channel";
-                if (pubMode2 === "only_bot" && tgJson.result?.message_id) {
-                  try {
-                    await fetch(`https://api.telegram.org/bot${config.token}/deleteMessage?chat_id=${targetChat}&message_id=${tgJson.result.message_id}`);
-                  } catch {
-                  }
-                }
-              } else {
-                console.warn("[Telegram sendPhoto error]:", tgJson?.description || tgJson);
-              }
-            } catch (uploadErr) {
-              console.warn("[Telegram Upload Exception]:", uploadErr?.message || uploadErr);
+              await fetch(`https://api.telegram.org/bot${config.token}/deleteMessage?chat_id=${result.targetChat}&message_id=${result.message_id}`);
+            } catch {
             }
           }
+        } catch (uploadErr) {
+          const msg = uploadErr?.message || String(uploadErr);
+          tgErrors.push(`${f.originalname}: ${msg}`);
+          console.warn("[Telegram Upload Exception]:", msg);
         }
         if (nativeTgUrl) {
           uploadedUrls.push(nativeTgUrl);
-        } else {
+        } else if (!tgErrors.length || !tgErrors[tgErrors.length - 1].includes("corrupto")) {
           uploadedUrls.push(`/uploads/${f.filename}`);
         }
       }
+    }
+    if (uploadedUrls.length === 0 && files && files.length > 0) {
+      res.status(502).json({
+        error: "No se pudo obtener el enlace de Telegram para las im\xE1genes subidas.",
+        details: tgErrors.join(" | ") || "Verifica que BOT_TOKEN y CHANNEL_ID est\xE9n configurados."
+      });
+      return;
     }
     const updatedPhotos = [...profile.photos || [], ...uploadedUrls];
     const updated = await saveProfile({ id: profileId, photos: updatedPhotos });
@@ -2637,14 +2686,36 @@ router.post("/admin/settings/qr", requireAdminAuth, upload.single("qr_image"), a
       res.status(400).json({ error: "No se envi\xF3 ninguna imagen QR" });
       return;
     }
+    const fileData = import_fs4.default.readFileSync(req.file.path);
+    if (!isValidImageBuffer(fileData)) {
+      try {
+        import_fs4.default.unlinkSync(req.file.path);
+      } catch {
+      }
+      res.status(400).json({ error: "El archivo QR est\xE1 corrupto o no es una imagen v\xE1lida (JPEG, PNG, WEBP o GIF)." });
+      return;
+    }
     const config = getBotConfig();
-    const qrUrl = `${config.baseUrl}/uploads/${req.file.filename}`;
+    let qrUrl = "";
+    try {
+      const result = await uploadFileToTelegramHost(req.file.path, req.file.originalname, "\u{1F4F2} [Media Host] QR Oficial de Comisi\xF3n");
+      if (result.url) {
+        qrUrl = result.url;
+      } else if (result.error && !result.error.includes("BOT_TOKEN")) {
+        console.warn("[QR TG Upload Warning]:", result.error);
+      }
+    } catch (tgErr) {
+      console.warn("[QR TG Upload Exception]:", tgErr?.message || tgErr);
+    }
+    if (!qrUrl) {
+      qrUrl = `${config.baseUrl}/uploads/${req.file.filename}`;
+    }
     saveSystemSetting("qr_image_url", qrUrl);
     const adminId = req.adminUserId || "Admin Web";
     await addAuditLog("UPDATE_SETTINGS", adminId, "QR de Comisi\xF3n actualizado");
     res.json({ success: true, qr_image_url: qrUrl });
   } catch (err) {
-    res.status(500).json({ error: "Error al guardar imagen QR" });
+    res.status(500).json({ error: "Error al guardar imagen QR", details: err?.message });
   }
 });
 router.post("/admin/settings/pinned", requireAdminAuth, async (req, res) => {

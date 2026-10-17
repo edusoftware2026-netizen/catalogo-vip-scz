@@ -2,6 +2,93 @@ import express, { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+
+// ── Validación de imágenes: Telegram rechaza archivos corruptos o que no son
+//    imagen real con "IMAGE_PROCESS_FAILED". Se valida el contenido binario
+//    (magic bytes + estructura) antes de subir a Telegram. ────────────────────
+export function isValidImageBuffer(buffer: Buffer): boolean {
+  try {
+    if (!buffer || buffer.length < 32) return false;
+    // JPEG: empieza con FFD8 y termina con FFD9
+    if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+      return buffer.subarray(-2)[0] === 0xff && buffer.subarray(-2)[1] === 0xd9;
+    }
+    // PNG: firma 89 50 4E 47 + chunk IHDR con dimensiones válidas
+    if (buffer.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+      const width = buffer.readUInt32BE(16);
+      const height = buffer.readUInt32BE(20);
+      return buffer.slice(12, 16).toString() === 'IHDR' && width > 0 && height > 0;
+    }
+    // WEBP: RIFF....WEBP
+    if (buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WEBP') return true;
+    // GIF: GIF87a / GIF89a
+    if (buffer.slice(0, 6).toString('ascii').startsWith('GIF8')) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// Sube un archivo local al Bot de Telegram (como host de medios), extrae el
+// file_id de la foto más grande y devuelve su URL nativa permanente.
+async function uploadFileToTelegramHost(
+  filePath: string,
+  originalName: string,
+  caption: string
+): Promise<{ url: string | null; error?: string; message_id?: number; targetChat?: string }> {
+  const config = getBotConfig();
+  if (!config.token) return { url: null, error: 'BOT_TOKEN no configurado' };
+
+  // El bot debe enviar a un chat donde pueda escribir. Un canal público suele
+  // dar FORBIDDEN, por eso se prefiere el chat privado del primer administrador
+  // como host de medios y se deja el canal como último recurso.
+  const adminChat = config.adminIds && config.adminIds[0];
+  const targetChat = adminChat || config.channelId;
+  if (!targetChat) return { url: null, error: 'No hay chat destino (ADMIN_IDS / CHANNEL_ID)' };
+
+  const fileData = fs.readFileSync(filePath);
+
+  // Bloquear archivos corruptos/falsos antes de enviarlos a Telegram
+  if (!isValidImageBuffer(fileData)) {
+    return { url: null, error: 'El archivo de imagen está corrupto o no es una imagen válida (JPEG, PNG, WEBP o GIF).' };
+  }
+
+  // Si el nombre original tiene extensión incorrecta, corregirla según el contenido real
+  let sendName = originalName || path.basename(filePath);
+  const detectedExt =
+    fileData[0] === 0xff && fileData[1] === 0xd8 ? '.jpg'
+      : fileData.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ? '.png'
+        : fileData.slice(8, 12).toString('ascii') === 'WEBP' ? '.webp'
+          : fileData.slice(0, 4).toString('ascii') === 'GIF8' ? '.gif' : '';
+  if (detectedExt && path.extname(sendName).toLowerCase() !== detectedExt) {
+    sendName = path.basename(sendName, path.extname(sendName)) + detectedExt;
+  }
+
+  const blob = new Blob([fileData]);
+  const formData = new FormData();
+  formData.append('chat_id', targetChat);
+  formData.append('photo', blob, sendName);
+  formData.append('caption', caption);
+
+  const tgRes = await fetch(`https://api.telegram.org/bot${config.token}/sendPhoto`, {
+    method: 'POST',
+    body: formData
+  });
+  const tgJson: any = await tgRes.json();
+
+  if (!tgJson.ok) {
+    return { url: null, error: tgJson?.description || 'Error desconocido de Telegram API' };
+  }
+
+  const photos = tgJson.result?.photo;
+  if (!Array.isArray(photos) || photos.length === 0) {
+    return { url: null, error: 'Telegram no devolvió el archivo de foto' };
+  }
+
+  const largest = photos[photos.length - 1];
+  const url = await getTelegramFileUrl(largest.file_id);
+  return { url, message_id: tgJson.result?.message_id, targetChat };
+}
 import {
   getPublicProfiles,
   getProfileById,
@@ -192,6 +279,8 @@ export function scheduleAutoReply(requestId: string, tgUserId: string, clientNam
 router.post('/requests', upload.single('receipt'), async (req: Request, res: Response) => {
   try {
     const { profile_id, client_name, client_telegram, tg_user_id, notes } = req.body;
+    // URL del comprobante: puede llegar directo en el body o resolverse subiendo el archivo a Telegram
+    let receipt_url: string | undefined = req.body.receipt_url?.trim() || undefined;
     if (!profile_id) {
       res.status(400).json({ error: 'El ID del perfil es requerido' });
       return;
@@ -582,54 +671,53 @@ router.post('/admin/profiles/:id/photos', requireAdminAuth, upload.array('photos
     }
 
     // 2. Si se subieron archivos binarios a través de multer
-    // Se suben a Telegram via Bot para obtener su URL nativo permanente (api.telegram.org) y guardarlo en el servidor
+    // Se suben al Bot de Telegram (host de medios), se extrae el file_id de la
+    // foto y se guarda su URL nativa permanente en la BD para la Mini App.
+    const tgErrors: string[] = [];
     if (files && files.length > 0) {
       for (const f of files) {
         let nativeTgUrl: string | null = null;
-        if (config.token) {
-          const targetChat = config.channelId || (config.adminIds && config.adminIds[0]);
-          if (targetChat) {
-            try {
-              const fileData = fs.readFileSync(f.path);
-              const blob = new Blob([fileData]);
-              const formData = new FormData();
-              formData.append('chat_id', targetChat);
-              formData.append('photo', blob, f.originalname);
-              formData.append('caption', `📸 [Media Host] ${profile.name}`);
+        try {
+          const result = await uploadFileToTelegramHost(f.path, f.originalname, `📸 [Media Host] ${profile.name}`);
+          nativeTgUrl = result.url;
 
-              const tgRes = await fetch(`https://api.telegram.org/bot${config.token}/sendPhoto`, {
-                method: 'POST',
-                body: formData
-              });
-              const tgJson: any = await tgRes.json();
-              if (tgJson.ok && tgJson.result?.photo?.length > 0) {
-                const largest = tgJson.result.photo[tgJson.result.photo.length - 1];
-                nativeTgUrl = await getTelegramFileUrl(largest.file_id);
-
-                // Si el modo configurado es solo bot, eliminamos el mensaje auxiliar del canal para mantenerlo limpio
-                const pubMode = getSystemSetting('publish_destination') || 'bot_and_channel';
-                if (pubMode === 'only_bot' && tgJson.result?.message_id) {
-                  try {
-                    await fetch(`https://api.telegram.org/bot${config.token}/deleteMessage?chat_id=${targetChat}&message_id=${tgJson.result.message_id}`);
-                  } catch {}
-                }
-              } else {
-                console.warn('[Telegram sendPhoto error]:', tgJson?.description || tgJson);
-              }
-            } catch (uploadErr: any) {
-              console.warn('[Telegram Upload Exception]:', uploadErr?.message || uploadErr);
-            }
+          if (result.error) {
+            tgErrors.push(`${f.originalname}: ${result.error}`);
+            console.warn('[Telegram sendPhoto error]:', result.error);
           }
+
+          // Si el modo configurado es solo bot, eliminamos el mensaje auxiliar del canal para mantenerlo limpio
+          const pubMode = getSystemSetting('publish_destination') || 'bot_and_channel';
+          if (nativeTgUrl && pubMode === 'only_bot' && result.message_id && result.targetChat) {
+            try {
+              await fetch(`https://api.telegram.org/bot${config.token}/deleteMessage?chat_id=${result.targetChat}&message_id=${result.message_id}`);
+            } catch {}
+          }
+        } catch (uploadErr: any) {
+          const msg = uploadErr?.message || String(uploadErr);
+          tgErrors.push(`${f.originalname}: ${msg}`);
+          console.warn('[Telegram Upload Exception]:', msg);
         }
 
         // Si se obtuvo la URL nativa de Telegram, se guarda directamente en la BD
         if (nativeTgUrl) {
           uploadedUrls.push(nativeTgUrl);
-        } else {
-          // Fallback a almacenamiento local si Telegram no estuviera disponible
+        } else if (!tgErrors.length || !tgErrors[tgErrors.length - 1].includes('corrupto')) {
+          // Fallback a almacenamiento local solo si Telegram está no disponible
+          // (si la imagen era inválida no se guarda nada y se informa al usuario)
           uploadedUrls.push(`/uploads/${f.filename}`);
         }
       }
+    }
+
+    // Si ningún archivo pudo convertirse en URL de Telegram y no hay URLs directas,
+    // responder con error claro en lugar de guardar una ruta local rota.
+    if (uploadedUrls.length === 0 && files && files.length > 0) {
+      res.status(502).json({
+        error: 'No se pudo obtener el enlace de Telegram para las imágenes subidas.',
+        details: tgErrors.join(' | ') || 'Verifica que BOT_TOKEN y CHANNEL_ID estén configurados.'
+      });
+      return;
     }
 
     const updatedPhotos = [...(profile.photos || []), ...uploadedUrls];
@@ -819,14 +907,41 @@ router.post('/admin/settings/qr', requireAdminAuth, upload.single('qr_image'), a
       res.status(400).json({ error: 'No se envió ninguna imagen QR' });
       return;
     }
+
+    // Validar que el archivo sea una imagen real antes de aceptarlo
+    const fileData = fs.readFileSync(req.file.path);
+    if (!isValidImageBuffer(fileData)) {
+      try { fs.unlinkSync(req.file.path); } catch {}
+      res.status(400).json({ error: 'El archivo QR está corrupto o no es una imagen válida (JPEG, PNG, WEBP o GIF).' });
+      return;
+    }
+
     const config = getBotConfig();
-    const qrUrl = `${config.baseUrl}/uploads/${req.file.filename}`;
+
+    // Intentar alojar la imagen en Telegram y guardar su URL nativa permanente
+    let qrUrl = '';
+    try {
+      const result = await uploadFileToTelegramHost(req.file.path, req.file.originalname, '📲 [Media Host] QR Oficial de Comisión');
+      if (result.url) {
+        qrUrl = result.url;
+      } else if (result.error && !result.error.includes('BOT_TOKEN')) {
+        console.warn('[QR TG Upload Warning]:', result.error);
+      }
+    } catch (tgErr: any) {
+      console.warn('[QR TG Upload Exception]:', tgErr?.message || tgErr);
+    }
+
+    // Fallback: ruta local del servidor
+    if (!qrUrl) {
+      qrUrl = `${config.baseUrl}/uploads/${req.file.filename}`;
+    }
+
     saveSystemSetting('qr_image_url', qrUrl);
     const adminId = (req as any).adminUserId || 'Admin Web';
     await addAuditLog('UPDATE_SETTINGS', adminId, 'QR de Comisión actualizado');
     res.json({ success: true, qr_image_url: qrUrl });
   } catch (err: any) {
-    res.status(500).json({ error: 'Error al guardar imagen QR' });
+    res.status(500).json({ error: 'Error al guardar imagen QR', details: err?.message });
   }
 });
 

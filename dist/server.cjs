@@ -656,14 +656,14 @@ var import_dotenv2 = __toESM(require("dotenv"), 1);
 var import_express2 = __toESM(require("express"), 1);
 var import_cors = __toESM(require("cors"), 1);
 var import_path4 = __toESM(require("path"), 1);
-var import_fs4 = __toESM(require("fs"), 1);
+var import_fs5 = __toESM(require("fs"), 1);
 var import_vite = require("vite");
 
 // src/server/routes.ts
 var import_express = __toESM(require("express"), 1);
 var import_multer = __toESM(require("multer"), 1);
 var import_path3 = __toESM(require("path"), 1);
-var import_fs3 = __toESM(require("fs"), 1);
+var import_fs4 = __toESM(require("fs"), 1);
 init_db();
 
 // src/server/telegram.ts
@@ -841,19 +841,15 @@ ${profile.description}
   if (pubMode === "only_bot") {
     return { success: true, message: "Modo Solo Bot activo: no se publica en el canal de Telegram" };
   }
-  const webCatalogUrl = baseUrl;
-  const botChatUrl = `https://t.me/${username}?start=cat`;
+  const directMiniAppUrl = `https://t.me/${username}?startapp=cat`;
   const botReserveUrl = `https://t.me/${username}?start=req_${profile.id}`;
   const replyMarkup = {
     inline_keyboard: [
       [
-        { text: "\u{1F48E} Ver Cat\xE1logo VIP", url: webCatalogUrl }
+        { text: "\u{1F48E} Ver Cat\xE1logo VIP", url: directMiniAppUrl }
       ],
       [
-        { text: "\u{1F916} Abrir Bot de Telegram", url: botChatUrl }
-      ],
-      [
-        { text: "\u{1F4F2} Solicitar Reserva (QR)", url: botReserveUrl }
+        { text: "\u{1F4B3} Pagar Comisi\xF3n/Reserva (QR)", url: botReserveUrl }
       ]
     ]
   };
@@ -1798,6 +1794,149 @@ _El bot ya le envi\xF3 el QR de pago y el monto de la comisi\xF3n al cliente._
   }
 }
 
+// src/server/validator.ts
+var import_fs3 = __toESM(require("fs"), 1);
+var import_genai = require("@google/genai");
+async function validateReceiptFile(file, expectedCommissionBs) {
+  if (!file || !file.path || !import_fs3.default.existsSync(file.path)) {
+    return {
+      valid: false,
+      reason: "No se recibi\xF3 ning\xFAn archivo de comprobante de pago."
+    };
+  }
+  const validMimes = ["image/jpeg", "image/png", "image/webp", "image/jpg", "image/heic"];
+  if (!validMimes.includes(file.mimetype.toLowerCase())) {
+    return {
+      valid: false,
+      reason: "El comprobante debe ser un archivo de imagen (JPG, PNG o WEBP)."
+    };
+  }
+  if (file.size < 10240) {
+    return {
+      valid: false,
+      reason: "El archivo adjunto es demasiado peque\xF1o o est\xE1 da\xF1ado. Por favor sube una captura completa y legible."
+    };
+  }
+  if (file.size > 15 * 1024 * 1024) {
+    return {
+      valid: false,
+      reason: "El archivo de imagen supera el l\xEDmite permitido de 15 MB."
+    };
+  }
+  try {
+    const fd = import_fs3.default.openSync(file.path, "r");
+    const headerBuffer = Buffer.alloc(12);
+    import_fs3.default.readSync(fd, headerBuffer, 0, 12, 0);
+    import_fs3.default.closeSync(fd);
+    const isJpeg = headerBuffer[0] === 255 && headerBuffer[1] === 216 && headerBuffer[2] === 255;
+    const isPng = headerBuffer[0] === 137 && headerBuffer[1] === 80 && headerBuffer[2] === 78 && headerBuffer[3] === 71;
+    const isWebp = headerBuffer.toString("ascii", 0, 4) === "RIFF" && headerBuffer.toString("ascii", 8, 12) === "WEBP";
+    if (!isJpeg && !isPng && !isWebp) {
+      return {
+        valid: false,
+        reason: "El archivo no tiene una cabecera de imagen v\xE1lida. Por favor adjunta una captura real."
+      };
+    }
+  } catch (err) {
+    console.warn("[Receipt Header Check Warning]:", err?.message || err);
+  }
+  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+  if (geminiKey) {
+    try {
+      const ai = new import_genai.GoogleGenAI({ apiKey: geminiKey });
+      const fileBuffer = import_fs3.default.readFileSync(file.path);
+      const base64Data = fileBuffer.toString("base64");
+      const prompt = `Act\xFAa como un validador estricto de comprobantes de pago y transferencias bancarias o pagos QR en Bolivia (BCP, BNB, Banco Uni\xF3n, Ganadero, Mercantil Santa Cruz, Bisa, BancoSol, Yape, Simple QR, Tigo Money, etc.).
+Analiza detenidamente la imagen adjunta:
+1. \xBFEs un comprobante de pago leg\xEDtimo, transferencia bancaria, recibo de pago QR o captura de banca m\xF3vil?
+2. \xBFTiene coherencia visual y textual con una transacci\xF3n real (no es una selfie, paisaje, meme, foto aleatoria o imagen en blanco)?
+${expectedCommissionBs ? `3. Monto esperado referencial: Bs. ${expectedCommissionBs}` : ""}
+
+Responde \xDANICAMENTE en JSON con este formato exacto:
+{
+  "is_payment_receipt": boolean,
+  "is_coherent": boolean,
+  "bank_or_app": string,
+  "detected_amount": number o null,
+  "confidence_percentage": number,
+  "reason": string
+}`;
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  data: base64Data,
+                  mimeType: file.mimetype
+                }
+              },
+              {
+                text: prompt
+              }
+            ]
+          }
+        ],
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+      const responseText = response.text || "";
+      const cleanJson = responseText.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(cleanJson);
+      if (parsed.is_payment_receipt === false || parsed.is_coherent === false) {
+        return {
+          valid: false,
+          reason: parsed.reason || "El archivo adjunto no fue reconocido como un comprobante de pago o transferencia coherente. Por favor adjunta una captura clara de tu pago.",
+          analysis: {
+            ...parsed,
+            method: "ai_gemini"
+          }
+        };
+      }
+      return {
+        valid: true,
+        analysis: {
+          ...parsed,
+          method: "ai_gemini"
+        }
+      };
+    } catch (aiErr) {
+      console.warn("[Gemini Receipt Scanner Warning]:", aiErr?.message || aiErr);
+    }
+  }
+  try {
+    const sampleSize = Math.min(file.size, 16384);
+    const fd = import_fs3.default.openSync(file.path, "r");
+    const sampleBuffer = Buffer.alloc(sampleSize);
+    import_fs3.default.readSync(fd, sampleBuffer, 0, sampleSize, 0);
+    import_fs3.default.closeSync(fd);
+    const byteCounts = /* @__PURE__ */ new Map();
+    for (let i = 0; i < sampleSize; i++) {
+      const b = sampleBuffer[i];
+      byteCounts.set(b, (byteCounts.get(b) || 0) + 1);
+    }
+    if (byteCounts.size < 60) {
+      return {
+        valid: false,
+        reason: "La imagen parece estar en blanco o no contiene informaci\xF3n legible. Por favor adjunta una captura real de tu pago."
+      };
+    }
+  } catch (hErr) {
+    console.warn("[Heuristic Entropy Warning]:", hErr?.message || hErr);
+  }
+  return {
+    valid: true,
+    analysis: {
+      is_payment_receipt: true,
+      is_coherent: true,
+      method: "heuristic"
+    }
+  };
+}
+
 // src/server/routes.ts
 var router = import_express.default.Router();
 var sseClients = /* @__PURE__ */ new Set();
@@ -1815,8 +1954,8 @@ data: ${JSON.stringify(data)}
   }
 }
 var uploadDir = import_path3.default.join(process.cwd(), "public", "uploads");
-if (!import_fs3.default.existsSync(uploadDir)) {
-  import_fs3.default.mkdirSync(uploadDir, { recursive: true });
+if (!import_fs4.default.existsSync(uploadDir)) {
+  import_fs4.default.mkdirSync(uploadDir, { recursive: true });
 }
 var storage = import_multer.default.diskStorage({
   destination: (req, file, cb) => {
@@ -1941,10 +2080,6 @@ ${qrUrl ? "\u{1F4F2} *Te adjuntamos el c\xF3digo QR oficial de pago.* Por favor,
 router.post("/requests", upload.single("receipt"), async (req, res) => {
   try {
     const { profile_id, client_name, client_telegram, tg_user_id, notes } = req.body;
-    let receipt_url = req.body.receipt_url;
-    if (req.file) {
-      receipt_url = `/uploads/${req.file.filename}`;
-    }
     if (!profile_id) {
       res.status(400).json({ error: "El ID del perfil es requerido" });
       return;
@@ -1953,6 +2088,53 @@ router.post("/requests", upload.single("receipt"), async (req, res) => {
     if (!profile) {
       res.status(404).json({ error: "Perfil no encontrado" });
       return;
+    }
+    if (!req.file && !receipt_url) {
+      res.status(400).json({
+        error: "Es obligatorio adjuntar la captura del comprobante de pago para procesar la comisi\xF3n/reserva."
+      });
+      return;
+    }
+    if (req.file) {
+      const validation = await validateReceiptFile(req.file, profile.commission_bs);
+      if (!validation.valid) {
+        try {
+          if (import_fs4.default.existsSync(req.file.path)) import_fs4.default.unlinkSync(req.file.path);
+        } catch {
+        }
+        res.status(400).json({
+          error: validation.reason || "El archivo adjunto no tiene coherencia con un comprobante de pago v\xE1lido. Por favor adjunta una captura real de tu transferencia o pago QR."
+        });
+        return;
+      }
+      const config2 = getBotConfig();
+      if (config2.token) {
+        try {
+          const targetChat = config2.adminIds && config2.adminIds[0] || config2.channelId;
+          if (targetChat) {
+            const fileData = import_fs4.default.readFileSync(req.file.path);
+            const blob = new Blob([fileData]);
+            const formData = new FormData();
+            formData.append("chat_id", targetChat);
+            formData.append("photo", blob, req.file.originalname);
+            formData.append("caption", `\u{1F9FE} Comprobante recibido de ${client_name || "Cliente"} para ${profile.name} (Bs. ${profile.commission_bs})`);
+            const tgRes = await fetch(`https://api.telegram.org/bot${config2.token}/sendPhoto`, {
+              method: "POST",
+              body: formData
+            });
+            const tgJson = await tgRes.json();
+            if (tgJson.ok && tgJson.result?.photo?.length > 0) {
+              const largest = tgJson.result.photo[tgJson.result.photo.length - 1];
+              receipt_url = await getTelegramFileUrl(largest.file_id);
+            }
+          }
+        } catch (tgErr) {
+          console.warn("[Receipt TG Upload Warning]:", tgErr);
+        }
+      }
+      if (!receipt_url) {
+        receipt_url = `/uploads/${req.file.filename}`;
+      }
     }
     const request = await createCustomerRequest({
       profile_id: profile.id,
@@ -2199,7 +2381,7 @@ router.post("/admin/profiles/:id/photos", requireAdminAuth, upload.array("photos
           const targetChat = config.channelId || config.adminIds && config.adminIds[0];
           if (targetChat) {
             try {
-              const fileData = import_fs3.default.readFileSync(f.path);
+              const fileData = import_fs4.default.readFileSync(f.path);
               const blob = new Blob([fileData]);
               const formData = new FormData();
               formData.append("chat_id", targetChat);
@@ -2481,12 +2663,12 @@ async function startServer() {
   app.use(import_express2.default.json({ limit: "25mb" }));
   app.use(import_express2.default.urlencoded({ extended: true, limit: "25mb" }));
   const dataUploadsPath = import_path4.default.join(process.cwd(), "data", "uploads");
-  if (!import_fs4.default.existsSync(dataUploadsPath)) {
-    import_fs4.default.mkdirSync(dataUploadsPath, { recursive: true });
+  if (!import_fs5.default.existsSync(dataUploadsPath)) {
+    import_fs5.default.mkdirSync(dataUploadsPath, { recursive: true });
   }
   const uploadsPath = import_path4.default.join(process.cwd(), "public", "uploads");
-  if (!import_fs4.default.existsSync(uploadsPath)) {
-    import_fs4.default.mkdirSync(uploadsPath, { recursive: true });
+  if (!import_fs5.default.existsSync(uploadsPath)) {
+    import_fs5.default.mkdirSync(uploadsPath, { recursive: true });
   }
   app.use("/uploads", import_express2.default.static(uploadsPath));
   app.use(import_express2.default.static(import_path4.default.join(process.cwd(), "public")));

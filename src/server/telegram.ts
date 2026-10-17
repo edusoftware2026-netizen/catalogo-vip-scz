@@ -212,23 +212,18 @@ ${profile.description}
     return { success: true, message: 'Modo Solo Bot activo: no se publica en el canal de Telegram' };
   }
 
-  // Enlace web directo al Catálogo VIP / Mini App
-  const webCatalogUrl = baseUrl;
-  // Enlace directo al Bot de Telegram
-  const botChatUrl = `https://t.me/${username}?start=cat`;
+  // Enlace directo nativo a la Mini App en Telegram (abre directo sin diálogo de confirmación de enlace)
+  const directMiniAppUrl = `https://t.me/${username}?startapp=cat`;
   // Enlace directo de reserva con la modelo específica
   const botReserveUrl = `https://t.me/${username}?start=req_${profile.id}`;
 
   const replyMarkup = {
     inline_keyboard: [
       [
-        { text: '💎 Ver Catálogo VIP', url: webCatalogUrl }
+        { text: '💎 Ver Catálogo VIP', url: directMiniAppUrl }
       ],
       [
-        { text: '🤖 Abrir Bot de Telegram', url: botChatUrl }
-      ],
-      [
-        { text: '📲 Solicitar Reserva (QR)', url: botReserveUrl }
+        { text: '💳 Pagar Comisión/Reserva (QR)', url: botReserveUrl }
       ]
     ]
   };

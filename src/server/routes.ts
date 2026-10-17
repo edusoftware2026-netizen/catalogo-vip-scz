@@ -34,6 +34,7 @@ import {
   updateBotMenuButton,
   registerBotCommands
 } from './telegram.js';
+import { validateReceiptFile } from './validator.js';
 
 export const router = express.Router();
 
@@ -191,12 +192,6 @@ export function scheduleAutoReply(requestId: string, tgUserId: string, clientNam
 router.post('/requests', upload.single('receipt'), async (req: Request, res: Response) => {
   try {
     const { profile_id, client_name, client_telegram, tg_user_id, notes } = req.body;
-    let receipt_url = req.body.receipt_url;
-
-    if (req.file) {
-      receipt_url = `/uploads/${req.file.filename}`;
-    }
-
     if (!profile_id) {
       res.status(400).json({ error: 'El ID del perfil es requerido' });
       return;
@@ -206,6 +201,58 @@ router.post('/requests', upload.single('receipt'), async (req: Request, res: Res
     if (!profile) {
       res.status(404).json({ error: 'Perfil no encontrado' });
       return;
+    }
+
+    // 1. FILTRAR ENVÍO: Rechazar si no se adjuntó comprobante de pago
+    if (!req.file && !receipt_url) {
+      res.status(400).json({
+        error: 'Es obligatorio adjuntar la captura del comprobante de pago para procesar la comisión/reserva.'
+      });
+      return;
+    }
+
+    // 2. ESCANEO INTELIGENTE DEL ARCHIVO: Escanea y verifica coherencia del comprobante
+    if (req.file) {
+      const validation = await validateReceiptFile(req.file, profile.commission_bs);
+      if (!validation.valid) {
+        // Eliminar archivo temporal inválido del disco
+        try { if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); } catch {}
+        res.status(400).json({
+          error: validation.reason || 'El archivo adjunto no tiene coherencia con un comprobante de pago válido. Por favor adjunta una captura real de tu transferencia o pago QR.'
+        });
+        return;
+      }
+
+      // Si es válido, subir a Telegram para obtener URL nativa permanente
+      const config = getBotConfig();
+      if (config.token) {
+        try {
+          const targetChat = (config.adminIds && config.adminIds[0]) || config.channelId;
+          if (targetChat) {
+            const fileData = fs.readFileSync(req.file.path);
+            const blob = new Blob([fileData]);
+            const formData = new FormData();
+            formData.append('chat_id', targetChat);
+            formData.append('photo', blob, req.file.originalname);
+            formData.append('caption', `🧾 Comprobante recibido de ${client_name || 'Cliente'} para ${profile.name} (Bs. ${profile.commission_bs})`);
+            const tgRes = await fetch(`https://api.telegram.org/bot${config.token}/sendPhoto`, {
+              method: 'POST',
+              body: formData
+            });
+            const tgJson: any = await tgRes.json();
+            if (tgJson.ok && tgJson.result?.photo?.length > 0) {
+              const largest = tgJson.result.photo[tgJson.result.photo.length - 1];
+              receipt_url = await getTelegramFileUrl(largest.file_id);
+            }
+          }
+        } catch (tgErr) {
+          console.warn('[Receipt TG Upload Warning]:', tgErr);
+        }
+      }
+
+      if (!receipt_url) {
+        receipt_url = `/uploads/${req.file.filename}`;
+      }
     }
 
     const request = await createCustomerRequest({

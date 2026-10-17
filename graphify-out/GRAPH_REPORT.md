@@ -1,17 +1,17 @@
 # Graph Report - catalogo-vip-scz  (2026-10-17)
 
 ## Corpus Check
-- 24 files · ~223,065 words
+- 25 files · ~224,040 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 3, .example 1, .lock 1)
 
 ## Summary
-- 225 nodes · 489 edges · 9 communities
+- 228 nodes · 495 edges · 10 communities
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 3 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `ebd4d9ee`
+- Built from commit: `1784a29d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -25,6 +25,7 @@
 - devDependencies
 - 🌐 Alternativa 2 (Recomendada para Producción 24/7): Despliegue en la Nube con Fly.io
 - Filosofía Pragmática y Flexible (Ponytail Adaptativo)
+- scripts
 
 ## God Nodes (most connected - your core abstractions)
 1. `processTelegramUpdate()` - 29 edges
@@ -53,7 +54,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (9 total, 0 thin omitted)
+## Communities (10 total, 0 thin omitted)
 
 ### Community 0 - "telegram.ts"
 Cohesion: 0.16
@@ -64,8 +65,8 @@ Cohesion: 0.10
 Nodes (28): lucide-react, react, react-dom, App(), AdminPanel(), AdminPanelProps, AdminTab, AgeModal() (+20 more)
 
 ### Community 2 - "package.json"
-Cohesion: 0.05
-Nodes (39): name, private, scripts, build, clean, dev, lint, start (+31 more)
+Cohesion: 0.06
+Nodes (35): name, private, type, version, autoprefixer, cors, dotenv, esbuild (+27 more)
 
 ### Community 3 - "db.ts"
 Cohesion: 0.13
@@ -91,24 +92,28 @@ Nodes (7): ⚡ Alternativa 1 (Para Pruebas Rápida desde tu PC): Cloudflare Tunn
 Cohesion: 0.29
 Nodes (6): 1. Reutilización Inteligente, 2. Claridad y Legibilidad sobre Brevedad Forzada, 3. Alcance Preciso (Anti-Sobreingeniería), 4. Flexibilidad Arquitectónica, 5. Cero Recortes en lo Crítico, Filosofía Pragmática y Flexible (Ponytail Adaptativo)
 
+### Community 9 - "scripts"
+Cohesion: 0.33
+Nodes (6): scripts, build, clean, dev, lint, start
+
 ## Knowledge Gaps
-- **16 isolated node(s):** `@google/genai`, `motion`, `sql.js`, `@types/cors`, `@types/express` (+11 more)
+- **15 isolated node(s):** `motion`, `sql.js`, `@types/cors`, `@types/express`, `@types/jsonwebtoken` (+10 more)
   These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 105 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `dependencies` connect `dependencies` to `package.json`?**
-  _High betweenness centrality (0.111) - this node is a cross-community bridge._
-- **What connects `@google/genai`, `motion`, `sql.js` to the rest of the system?**
-  _16 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _High betweenness centrality (0.110) - this node is a cross-community bridge._
+- **What connects `motion`, `sql.js`, `@types/cors` to the rest of the system?**
+  _15 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `App.tsx` be split into smaller, more focused modules?**
   _Cohesion score 0.10121951219512196 - nodes in this community are weakly interconnected._
 - **Why does `devDependencies` connect `devDependencies` to `package.json`?**
-  _High betweenness centrality (0.097) - this node is a cross-community bridge._
+  _High betweenness centrality (0.096) - this node is a cross-community bridge._
 - **Should `package.json` be split into smaller, more focused modules?**
-  _Cohesion score 0.051207729468599035 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05647840531561462 - nodes in this community are weakly interconnected._
 - **Why does `@libsql/client` connect `package.json` to `db.ts`?**
-  _High betweenness centrality (0.070) - this node is a cross-community bridge._
+  _High betweenness centrality (0.068) - this node is a cross-community bridge._
 - **Should `db.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.1265597147950089 - nodes in this community are weakly interconnected._

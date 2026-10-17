@@ -97,6 +97,11 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
       return;
     }
 
+    if (!selectedFile) {
+      setError('Es obligatorio adjuntar la captura del comprobante de pago para procesar la comisión/reserva.');
+      return;
+    }
+
     setSubmitting(true);
     setError('');
 
@@ -109,10 +114,7 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
         formData.append('tg_user_id', tgUserContext.id);
       }
       formData.append('notes', notes || 'Comprobante de reserva adjunto desde el catálogo');
-
-      if (selectedFile) {
-        formData.append('receipt', selectedFile);
-      }
+      formData.append('receipt', selectedFile);
 
       const res = await fetch('/api/requests', {
         method: 'POST',
@@ -123,7 +125,7 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
       if (res.ok && data.success) {
         setSubmitted(true);
       } else {
-        setError(data.error || 'Error al procesar la reserva');
+        setError(data.error || 'Error al procesar el comprobante de la comisión/reserva.');
       }
     } catch {
       setError('Error de conexión con el servidor. Intenta nuevamente.');
@@ -605,18 +607,22 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
                       </div>
                     )}
 
-                    {/* BOTÓN SOLICITAR RESERVA */}
+                    {/* BOTÓN PAGAR COMISIÓN/RESERVA */}
                     <button
                       type="submit"
-                      disabled={submitting}
-                      className="w-full py-4 px-5 rounded-xl bg-linear-to-r from-amber-500 via-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:opacity-50 text-zinc-950 font-extrabold text-sm tracking-wider uppercase transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer"
+                      disabled={submitting || !selectedFile}
+                      className={`w-full py-4 px-5 rounded-xl font-extrabold text-sm tracking-wider uppercase transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer ${
+                        !selectedFile
+                          ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-60'
+                          : 'bg-linear-to-r from-amber-500 via-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-zinc-950 shadow-amber-500/20'
+                      }`}
                     >
                       {submitting ? (
-                        <span>Procesando Reserva...</span>
+                        <span>Escaneando y Validando Comprobante...</span>
                       ) : (
                         <>
                           <Send className="w-4 h-4" />
-                          Solicitar Reserva
+                          Pagar Comisión/Reserva
                         </>
                       )}
                     </button>

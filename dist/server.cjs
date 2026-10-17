@@ -679,7 +679,7 @@ if (!import_fs2.default.existsSync(UPLOADS_DIR)) {
   import_fs2.default.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 function getBotConfig() {
-  const token = process.env.BOT_TOKEN || "";
+  const token2 = process.env.BOT_TOKEN || "";
   const storedUsername = getSystemSetting("bot_username");
   let username = (storedUsername || process.env.BOT_USERNAME || "CatalogoVIPSCZBot").replace(/^@/, "").trim();
   if (username.toLowerCase() === "catalogovipscz") {
@@ -690,7 +690,7 @@ function getBotConfig() {
   const adminIds = (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((id) => id.trim()).filter(Boolean);
   const signingSecret = process.env.ADMIN_SIGNING_SECRET || "secret_jwt_key_santa_cruz";
   const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || "http://localhost:3000";
-  return { token, username, secret, channelId, adminIds, signingSecret, baseUrl };
+  return { token: token2, username, secret, channelId, adminIds, signingSecret, baseUrl };
 }
 function isAdminUser(telegramUserId) {
   const { adminIds } = getBotConfig();
@@ -726,12 +726,12 @@ function httpsPostJson(url, body) {
   });
 }
 async function callTelegramApi(method, body) {
-  const { token } = getBotConfig();
-  if (!token) {
+  const { token: token2 } = getBotConfig();
+  if (!token2) {
     console.warn(`[Telegram API] Warning: BOT_TOKEN is not configured. Method called: ${method}`);
     return { ok: false, description: "BOT_TOKEN is not configured in environment variables" };
   }
-  const url = `https://api.telegram.org/bot${token}/${method}`;
+  const url = `https://api.telegram.org/bot${token2}/${method}`;
   try {
     const data = await httpsPostJson(url, body);
     return data;
@@ -844,34 +844,49 @@ ${profile.description}
       ]
     ]
   };
-  let primaryPhoto = profile.photos && profile.photos.length > 0 ? profile.photos[0] : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80";
-  if (primaryPhoto.startsWith("/")) {
-    primaryPhoto = `${baseUrl}${primaryPhoto}`;
+  let rawPhoto = profile.photos && profile.photos.length > 0 ? profile.photos[0] : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80";
+  let sendRes = null;
+  if (rawPhoto.startsWith("/uploads/")) {
+    const cleanRelative = rawPhoto.replace(/^\//, "");
+    const localCandidates = [
+      import_path2.default.join(process.cwd(), "public", cleanRelative),
+      import_path2.default.join(process.cwd(), "dist", cleanRelative),
+      import_path2.default.join(process.cwd(), cleanRelative)
+    ];
+    const foundPath = localCandidates.find((p) => import_fs2.default.existsSync(p));
+    if (foundPath && token) {
+      try {
+        const fileBuffer = import_fs2.default.readFileSync(foundPath);
+        const blob = new Blob([fileBuffer]);
+        const formData = new FormData();
+        formData.append("chat_id", channelId);
+        formData.append("photo", blob, import_path2.default.basename(foundPath));
+        formData.append("caption", caption);
+        formData.append("parse_mode", "Markdown");
+        formData.append("reply_markup", JSON.stringify(replyMarkup));
+        const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+          method: "POST",
+          body: formData
+        });
+        sendRes = await tgRes.json();
+      } catch (uploadErr) {
+        console.warn("[Sync Channel Multipart Upload]:", uploadErr?.message || uploadErr);
+      }
+    }
   }
-  if (profile.telegram_message_id) {
-    const editRes = await callTelegramApi("editMessageCaption", {
+  if (!sendRes) {
+    let primaryPhoto = rawPhoto;
+    if (primaryPhoto.startsWith("/")) {
+      primaryPhoto = `${baseUrl}${primaryPhoto}`;
+    }
+    sendRes = await callTelegramApi("sendPhoto", {
       chat_id: channelId,
-      message_id: profile.telegram_message_id,
+      photo: primaryPhoto,
       caption,
       parse_mode: "Markdown",
       reply_markup: replyMarkup
     });
-    if (editRes.ok) {
-      await addAuditLog("SYNC_CHANNEL", performer, `Publicaci\xF3n de ${profile.name} actualizada en el canal`, profileId);
-      return { success: true, message: "Publicaci\xF3n editada y actualizada con \xE9xito en el canal", telegramMessageId: profile.telegram_message_id };
-    } else {
-      const warnMsg = `No se pudo editar el mensaje previo (${profile.telegram_message_id}): ${editRes.description}. Se publicar\xE1 una nueva entrada en el canal.`;
-      await addSyncError(profileId, "EDIT_CAPTION_FALLBACK", warnMsg);
-      console.warn(`[Sync Channel Fallback] ${warnMsg}`);
-    }
   }
-  const sendRes = await callTelegramApi("sendPhoto", {
-    chat_id: channelId,
-    photo: primaryPhoto,
-    caption,
-    parse_mode: "Markdown",
-    reply_markup: replyMarkup
-  });
   if (sendRes.ok && sendRes.result?.message_id) {
     const newMsgId = sendRes.result.message_id;
     await saveProfile({ id: profile.id, telegram_message_id: newMsgId });
@@ -879,8 +894,12 @@ ${profile.description}
     return { success: true, message: "Publicado exitosamente en el canal", telegramMessageId: newMsgId };
   } else {
     const errorMsg = sendRes.description || "Error al publicar foto en canal Telegram";
-    await addSyncError(profileId, "SEND_PHOTO_CHANNEL", errorMsg);
-    return { success: false, message: `Error en Telegram: ${errorMsg}` };
+    let humanTip = errorMsg;
+    if (errorMsg.includes("chat not found")) {
+      humanTip = `Canal no encontrado (${channelId}). Aseg\xFArate de agregar al bot @${username || "bot"} como Administrador del canal con permiso de publicar mensajes.`;
+    }
+    await addSyncError(profileId, "SEND_PHOTO_CHANNEL", humanTip);
+    return { success: false, message: humanTip };
   }
 }
 async function sendPhotoToUser(chatId, photoUrl, caption) {
@@ -899,13 +918,13 @@ function generateAdminMagicToken(telegramUserId) {
     { expiresIn: "4h" }
   );
 }
-function verifyAdminToken(token) {
-  if (token === "admin_session_dani2026" || token === "dani2026") {
+function verifyAdminToken(token2) {
+  if (token2 === "admin_session_dani2026" || token2 === "dani2026") {
     return { valid: true, userId: "admin_web" };
   }
   const { signingSecret } = getBotConfig();
   try {
-    const decoded = import_jsonwebtoken.default.verify(token, signingSecret);
+    const decoded = import_jsonwebtoken.default.verify(token2, signingSecret);
     if (decoded && decoded.role === "admin") {
       return { valid: true, userId: decoded.sub };
     }
@@ -1382,14 +1401,14 @@ Sincronizaci\xF3n ejecutada en la web y canal.`);
   }
 }
 async function getTelegramFileUrl(fileId) {
-  const { token } = getBotConfig();
-  if (!token) {
+  const { token: token2 } = getBotConfig();
+  if (!token2) {
     return "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80";
   }
   const fileData = await callTelegramApi("getFile", { file_id: fileId });
   if (fileData.ok && fileData.result?.file_path) {
     const remotePath = fileData.result.file_path;
-    return `https://api.telegram.org/file/bot${token}/${remotePath}`;
+    return `https://api.telegram.org/file/bot${token2}/${remotePath}`;
   }
   return "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80";
 }
@@ -1811,8 +1830,8 @@ var upload = (0, import_multer.default)({
 function requireAdminAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.split(" ")[1];
-    const verified = verifyAdminToken(token);
+    const token2 = authHeader.split(" ")[1];
+    const verified = verifyAdminToken(token2);
     if (verified.valid) {
       req.adminUserId = verified.userId;
       return next();
@@ -1996,31 +2015,31 @@ router.post("/telegram/webhook", async (req, res) => {
   }
 });
 router.post("/admin/auth/login", (req, res) => {
-  const { password, token } = req.body;
+  const { password, token: token2 } = req.body;
   const adminPassword = (process.env.ADMIN_PASSWORD || "dani2026").replace(/^["']|["']$/g, "").trim();
   const cleanPass = String(password || "").trim();
-  const cleanToken = String(token || "").trim();
+  const cleanToken = String(token2 || "").trim();
   if (cleanPass === adminPassword || cleanPass === "dani2026" || cleanToken === "dani2026") {
     const newToken = generateAdminMagicToken("admin_web");
     res.json({ success: true, token: newToken, userId: "admin_web" });
     return;
   }
-  if (token) {
-    const verified = verifyAdminToken(token);
+  if (token2) {
+    const verified = verifyAdminToken(token2);
     if (verified.valid) {
-      res.json({ success: true, token, userId: verified.userId });
+      res.json({ success: true, token: token2, userId: verified.userId });
       return;
     }
   }
   res.status(401).json({ success: false, error: "Clave de acceso incorrecta" });
 });
 router.post("/admin/auth/verify", (req, res) => {
-  const { token } = req.body;
-  if (!token) {
+  const { token: token2 } = req.body;
+  if (!token2) {
     res.status(400).json({ error: "Token no proporcionado" });
     return;
   }
-  const verified = verifyAdminToken(token);
+  const verified = verifyAdminToken(token2);
   if (verified.valid) {
     res.json({ valid: true, userId: verified.userId });
   } else {
@@ -2150,47 +2169,22 @@ router.post("/admin/profiles/:id/photos", requireAdminAuth, upload.array("photos
     }
     if (files && files.length > 0) {
       for (const f of files) {
-        if (config.token && (config.channelId || config.adminIds && config.adminIds.length > 0)) {
-          try {
-            const targetChat = config.channelId || config.adminIds[0];
-            const fileData = import_fs3.default.readFileSync(f.path);
-            const blob = new Blob([fileData]);
-            const formData = new FormData();
-            formData.append("chat_id", targetChat);
-            formData.append("photo", blob, f.originalname);
-            const tgRes = await fetch(`https://api.telegram.org/bot${config.token}/sendPhoto`, {
-              method: "POST",
-              body: formData
-            });
-            const tgJson = await tgRes.json();
-            if (tgJson.ok && tgJson.result?.photo?.length > 0) {
-              const largest = tgJson.result.photo[tgJson.result.photo.length - 1];
-              const nativeTgUrl = await getTelegramFileUrl(largest.file_id);
-              uploadedUrls.push(nativeTgUrl);
-            } else {
-              uploadedUrls.push(`${config.baseUrl}/uploads/${f.filename}`);
-            }
-          } catch {
-            uploadedUrls.push(`${config.baseUrl}/uploads/${f.filename}`);
-          }
-        } else {
-          uploadedUrls.push(`${config.baseUrl}/uploads/${f.filename}`);
-        }
-        try {
-          if (import_fs3.default.existsSync(f.path)) {
-            import_fs3.default.unlinkSync(f.path);
-          }
-        } catch {
-        }
+        const photoUrl = `/uploads/${f.filename}`;
+        uploadedUrls.push(photoUrl);
       }
     }
     const updatedPhotos = [...profile.photos || [], ...uploadedUrls];
     const updated = await saveProfile({ id: profileId, photos: updatedPhotos });
     const adminId = req.adminUserId || "Admin Web";
     await addAuditLog("UPLOAD_PHOTOS", adminId, `${uploadedUrls.length} fotograf\xEDas agregadas a ${profile.name}`, profileId);
-    await syncProfileToChannel(profileId, adminId);
+    let syncResult = null;
+    try {
+      syncResult = await syncProfileToChannel(profileId, adminId);
+    } catch (syncErr) {
+      console.warn("[Sync Channel on Photo Upload]:", syncErr?.message || syncErr);
+    }
     broadcastEvent("PROFILE_UPDATED", updated);
-    res.json({ success: true, profile: updated, new_photos: uploadedUrls });
+    res.json({ success: true, profile: updated, new_photos: uploadedUrls, sync_result: syncResult });
   } catch (err) {
     res.status(500).json({ error: "Error al subir fotos", details: err?.message });
   }
@@ -2260,13 +2254,13 @@ router.get("/admin/logs", requireAdminAuth, async (req, res) => {
   }
 });
 router.post("/admin/webhook/setup", requireAdminAuth, async (req, res) => {
-  const { token, secret, baseUrl } = getBotConfig();
-  if (!token) {
+  const { token: token2, secret, baseUrl } = getBotConfig();
+  if (!token2) {
     res.status(400).json({ error: "BOT_TOKEN no configurado en las variables de entorno" });
     return;
   }
   const webhookUrl = `${baseUrl}/api/telegram/webhook`;
-  const tgUrl = `https://api.telegram.org/bot${token}/setWebhook`;
+  const tgUrl = `https://api.telegram.org/bot${token2}/setWebhook`;
   try {
     const response = await fetch(tgUrl, {
       method: "POST",

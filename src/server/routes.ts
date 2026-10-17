@@ -479,42 +479,12 @@ router.post('/admin/profiles/:id/photos', requireAdminAuth, upload.array('photos
       });
     }
 
-    // 2. Si se subieron archivos binarios, subirlos a Telegram para obtener su URL nativo
+    // 2. Si se subieron archivos binarios a través de multer
     if (files && files.length > 0) {
       for (const f of files) {
-        if (config.token && (config.channelId || (config.adminIds && config.adminIds.length > 0))) {
-          try {
-            const targetChat = config.channelId || config.adminIds[0];
-            const fileData = fs.readFileSync(f.path);
-            const blob = new Blob([fileData]);
-            const formData = new FormData();
-            formData.append('chat_id', targetChat);
-            formData.append('photo', blob, f.originalname);
-            const tgRes = await fetch(`https://api.telegram.org/bot${config.token}/sendPhoto`, {
-              method: 'POST',
-              body: formData
-            });
-            const tgJson = await tgRes.json();
-            if (tgJson.ok && tgJson.result?.photo?.length > 0) {
-              const largest = tgJson.result.photo[tgJson.result.photo.length - 1];
-              const nativeTgUrl = await getTelegramFileUrl(largest.file_id);
-              uploadedUrls.push(nativeTgUrl);
-            } else {
-              uploadedUrls.push(`${config.baseUrl}/uploads/${f.filename}`);
-            }
-          } catch {
-            uploadedUrls.push(`${config.baseUrl}/uploads/${f.filename}`);
-          }
-        } else {
-          uploadedUrls.push(`${config.baseUrl}/uploads/${f.filename}`);
-        }
-
-        // Eliminar inmediatamente el archivo temporal del disco para no almacenar multimedia local
-        try {
-          if (fs.existsSync(f.path)) {
-            fs.unlinkSync(f.path);
-          }
-        } catch {}
+        // La foto queda guardada permanentemente en public/uploads/ y se accede mediante /uploads/filename
+        const photoUrl = `/uploads/${f.filename}`;
+        uploadedUrls.push(photoUrl);
       }
     }
 
@@ -524,11 +494,16 @@ router.post('/admin/profiles/:id/photos', requireAdminAuth, upload.array('photos
     const adminId = (req as any).adminUserId || 'Admin Web';
     await addAuditLog('UPLOAD_PHOTOS', adminId, `${uploadedUrls.length} fotografías agregadas a ${profile.name}`, profileId);
 
-    // Auto sync
-    await syncProfileToChannel(profileId, adminId);
+    // Intentar sincronizar con el canal de Telegram
+    let syncResult: any = null;
+    try {
+      syncResult = await syncProfileToChannel(profileId, adminId);
+    } catch (syncErr: any) {
+      console.warn('[Sync Channel on Photo Upload]:', syncErr?.message || syncErr);
+    }
 
     broadcastEvent('PROFILE_UPDATED', updated);
-    res.json({ success: true, profile: updated, new_photos: uploadedUrls });
+    res.json({ success: true, profile: updated, new_photos: uploadedUrls, sync_result: syncResult });
   } catch (err: any) {
     res.status(500).json({ error: 'Error al subir fotos', details: err?.message });
   }

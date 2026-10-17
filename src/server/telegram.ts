@@ -221,40 +221,55 @@ ${profile.description}
     ]
   };
 
-  let primaryPhoto = profile.photos && profile.photos.length > 0 ? profile.photos[0] : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
-  if (primaryPhoto.startsWith('/')) {
-    primaryPhoto = `${baseUrl}${primaryPhoto}`;
+  let rawPhoto = profile.photos && profile.photos.length > 0 ? profile.photos[0] : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+  let sendRes: any = null;
+
+  // Si la foto es un archivo local del servidor (/uploads/...)
+  if (rawPhoto.startsWith('/uploads/')) {
+    const cleanRelative = rawPhoto.replace(/^\//, '');
+    const localCandidates = [
+      path.join(process.cwd(), 'public', cleanRelative),
+      path.join(process.cwd(), 'dist', cleanRelative),
+      path.join(process.cwd(), cleanRelative)
+    ];
+    const foundPath = localCandidates.find(p => fs.existsSync(p));
+
+    if (foundPath && token) {
+      try {
+        const fileBuffer = fs.readFileSync(foundPath);
+        const blob = new Blob([fileBuffer]);
+        const formData = new FormData();
+        formData.append('chat_id', channelId);
+        formData.append('photo', blob, path.basename(foundPath));
+        formData.append('caption', caption);
+        formData.append('parse_mode', 'Markdown');
+        formData.append('reply_markup', JSON.stringify(replyMarkup));
+
+        const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+          method: 'POST',
+          body: formData
+        });
+        sendRes = await tgRes.json();
+      } catch (uploadErr: any) {
+        console.warn('[Sync Channel Multipart Upload]:', uploadErr?.message || uploadErr);
+      }
+    }
   }
 
-  // If already published, attempt edit first
-  if (profile.telegram_message_id) {
-    const editRes = await callTelegramApi('editMessageCaption', {
+  // Si no se envió por multipart (es URL remota o fallback), usar callTelegramApi estándar
+  if (!sendRes) {
+    let primaryPhoto = rawPhoto;
+    if (primaryPhoto.startsWith('/')) {
+      primaryPhoto = `${baseUrl}${primaryPhoto}`;
+    }
+    sendRes = await callTelegramApi('sendPhoto', {
       chat_id: channelId,
-      message_id: profile.telegram_message_id,
+      photo: primaryPhoto,
       caption,
       parse_mode: 'Markdown',
       reply_markup: replyMarkup
     });
-
-    if (editRes.ok) {
-      await addAuditLog('SYNC_CHANNEL', performer, `Publicación de ${profile.name} actualizada en el canal`, profileId);
-      return { success: true, message: 'Publicación editada y actualizada con éxito en el canal', telegramMessageId: profile.telegram_message_id };
-    } else {
-      // Failed to edit (message deleted or old). Record error and fallback to new message.
-      const warnMsg = `No se pudo editar el mensaje previo (${profile.telegram_message_id}): ${editRes.description}. Se publicará una nueva entrada en el canal.`;
-      await addSyncError(profileId, 'EDIT_CAPTION_FALLBACK', warnMsg);
-      console.warn(`[Sync Channel Fallback] ${warnMsg}`);
-    }
   }
-
-  // Publish new photo message
-  const sendRes = await callTelegramApi('sendPhoto', {
-    chat_id: channelId,
-    photo: primaryPhoto,
-    caption,
-    parse_mode: 'Markdown',
-    reply_markup: replyMarkup
-  });
 
   if (sendRes.ok && sendRes.result?.message_id) {
     const newMsgId = sendRes.result.message_id;
@@ -263,8 +278,12 @@ ${profile.description}
     return { success: true, message: 'Publicado exitosamente en el canal', telegramMessageId: newMsgId };
   } else {
     const errorMsg = sendRes.description || 'Error al publicar foto en canal Telegram';
-    await addSyncError(profileId, 'SEND_PHOTO_CHANNEL', errorMsg);
-    return { success: false, message: `Error en Telegram: ${errorMsg}` };
+    let humanTip = errorMsg;
+    if (errorMsg.includes('chat not found')) {
+      humanTip = `Canal no encontrado (${channelId}). Asegúrate de agregar al bot @${username || 'bot'} como Administrador del canal con permiso de publicar mensajes.`;
+    }
+    await addSyncError(profileId, 'SEND_PHOTO_CHANNEL', humanTip);
+    return { success: false, message: humanTip };
   }
 }
 

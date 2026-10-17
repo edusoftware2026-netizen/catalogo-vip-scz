@@ -130,6 +130,7 @@ router.get('/info', (req: Request, res: Response) => {
     admin_contact_username: getSystemSetting('admin_contact_username') || 'danii001',
     pinned_message_text: getSystemSetting('pinned_message_text') || '',
     pinned_message_active: getSystemSetting('pinned_message_active') === 'true',
+    publish_destination: getSystemSetting('publish_destination') || 'bot_and_channel',
     database: getDbInfo(),
     legal_notice: 'Catálogo privado exclusivo para mayores de 18 años.'
   });
@@ -454,6 +455,18 @@ router.post('/admin/profiles/:id/publish', requireAdminAuth, async (req: Request
   }
 });
 
+router.post('/admin/profiles/:id/sync-channel', requireAdminAuth, async (req: Request, res: Response) => {
+  try {
+    const profileId = req.params.id;
+    const adminId = (req as any).adminUserId || 'Admin Web';
+    const result = await syncProfileToChannel(profileId, adminId);
+    broadcastEvent('PROFILE_UPDATED', { id: profileId });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Error al sincronizar canal', details: err?.message });
+  }
+});
+
 // POST Upload Photos (Guarda URLs nativas de Telegram sin almacenar multimedia en el servidor)
 router.post('/admin/profiles/:id/photos', requireAdminAuth, upload.array('photos', 5), async (req: Request, res: Response) => {
   try {
@@ -480,11 +493,53 @@ router.post('/admin/profiles/:id/photos', requireAdminAuth, upload.array('photos
     }
 
     // 2. Si se subieron archivos binarios a través de multer
+    // Se suben a Telegram via Bot para obtener su URL nativo permanente (api.telegram.org) y guardarlo en el servidor
     if (files && files.length > 0) {
       for (const f of files) {
-        // La foto queda guardada permanentemente en public/uploads/ y se accede mediante /uploads/filename
-        const photoUrl = `/uploads/${f.filename}`;
-        uploadedUrls.push(photoUrl);
+        let nativeTgUrl: string | null = null;
+        if (config.token) {
+          const targetChat = config.channelId || (config.adminIds && config.adminIds[0]);
+          if (targetChat) {
+            try {
+              const fileData = fs.readFileSync(f.path);
+              const blob = new Blob([fileData]);
+              const formData = new FormData();
+              formData.append('chat_id', targetChat);
+              formData.append('photo', blob, f.originalname);
+              formData.append('caption', `📸 [Media Host] ${profile.name}`);
+
+              const tgRes = await fetch(`https://api.telegram.org/bot${config.token}/sendPhoto`, {
+                method: 'POST',
+                body: formData
+              });
+              const tgJson: any = await tgRes.json();
+              if (tgJson.ok && tgJson.result?.photo?.length > 0) {
+                const largest = tgJson.result.photo[tgJson.result.photo.length - 1];
+                nativeTgUrl = await getTelegramFileUrl(largest.file_id);
+
+                // Si el modo configurado es solo bot, eliminamos el mensaje auxiliar del canal para mantenerlo limpio
+                const pubMode = getSystemSetting('publish_destination') || 'bot_and_channel';
+                if (pubMode === 'only_bot' && tgJson.result?.message_id) {
+                  try {
+                    await fetch(`https://api.telegram.org/bot${config.token}/deleteMessage?chat_id=${targetChat}&message_id=${tgJson.result.message_id}`);
+                  } catch {}
+                }
+              } else {
+                console.warn('[Telegram sendPhoto error]:', tgJson?.description || tgJson);
+              }
+            } catch (uploadErr: any) {
+              console.warn('[Telegram Upload Exception]:', uploadErr?.message || uploadErr);
+            }
+          }
+        }
+
+        // Si se obtuvo la URL nativa de Telegram, se guarda directamente en la BD
+        if (nativeTgUrl) {
+          uploadedUrls.push(nativeTgUrl);
+        } else {
+          // Fallback a almacenamiento local si Telegram no estuviera disponible
+          uploadedUrls.push(`/uploads/${f.filename}`);
+        }
       }
     }
 
@@ -494,12 +549,17 @@ router.post('/admin/profiles/:id/photos', requireAdminAuth, upload.array('photos
     const adminId = (req as any).adminUserId || 'Admin Web';
     await addAuditLog('UPLOAD_PHOTOS', adminId, `${uploadedUrls.length} fotografías agregadas a ${profile.name}`, profileId);
 
-    // Intentar sincronizar con el canal de Telegram
+    // Publicación según parametrización (bot_and_channel, only_bot, only_channel)
+    const pubMode = getSystemSetting('publish_destination') || 'bot_and_channel';
     let syncResult: any = null;
-    try {
-      syncResult = await syncProfileToChannel(profileId, adminId);
-    } catch (syncErr: any) {
-      console.warn('[Sync Channel on Photo Upload]:', syncErr?.message || syncErr);
+    if (pubMode !== 'only_bot') {
+      try {
+        syncResult = await syncProfileToChannel(profileId, adminId);
+      } catch (syncErr: any) {
+        console.warn('[Sync Channel on Photo Upload]:', syncErr?.message || syncErr);
+      }
+    } else {
+      syncResult = { success: true, message: 'Modo Solo Bot activo: no se publica en el canal' };
     }
 
     broadcastEvent('PROFILE_UPDATED', updated);
@@ -634,6 +694,10 @@ router.post('/admin/settings', requireAdminAuth, async (req: Request, res: Respo
     if (auto_reply_delay_minutes !== undefined) {
       saveSystemSetting('auto_reply_delay_minutes', String(auto_reply_delay_minutes));
     }
+    const { publish_destination } = req.body;
+    if (publish_destination !== undefined) {
+      saveSystemSetting('publish_destination', String(publish_destination));
+    }
 
     const adminId = (req as any).adminUserId || 'Admin Web';
     await addAuditLog('UPDATE_SETTINGS', adminId, 'Ajustes de Telegram y bot actualizados');
@@ -647,6 +711,7 @@ router.post('/admin/settings', requireAdminAuth, async (req: Request, res: Respo
       admin_contact_username: getSystemSetting('admin_contact_username') || 'danii001',
       telegram_only_access: isTelegramOnly,
       auto_reply_delay_minutes: autoReplyDelay,
+      publish_destination: getSystemSetting('publish_destination') || 'bot_and_channel',
       qr_image_url: getSystemSetting('qr_image_url') || ''
     });
   } catch (err: any) {

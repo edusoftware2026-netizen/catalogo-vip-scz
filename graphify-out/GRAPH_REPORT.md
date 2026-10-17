@@ -1,17 +1,17 @@
 # Graph Report - catalogo-vip-scz  (2026-10-17)
 
 ## Corpus Check
-- 24 files · ~222,314 words
+- 24 files · ~223,065 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 3, .example 1, .lock 1)
 
 ## Summary
-- 225 nodes · 488 edges · 10 communities
+- 225 nodes · 489 edges · 9 communities
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 3 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c4a88a0a`
+- Built from commit: `ebd4d9ee`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -25,16 +25,15 @@
 - devDependencies
 - 🌐 Alternativa 2 (Recomendada para Producción 24/7): Despliegue en la Nube con Fly.io
 - Filosofía Pragmática y Flexible (Ponytail Adaptativo)
-- scripts
 
 ## God Nodes (most connected - your core abstractions)
 1. `processTelegramUpdate()` - 29 edges
 2. `getDb()` - 26 edges
 3. `sendMessage()` - 19 edges
 4. `getProfileById()` - 18 edges
-5. `compilerOptions` - 15 edges
-6. `getBotConfig()` - 14 edges
-7. `syncProfileToChannel()` - 14 edges
+5. `syncProfileToChannel()` - 15 edges
+6. `compilerOptions` - 15 edges
+7. `getBotConfig()` - 14 edges
 8. `saveProfile()` - 12 edges
 9. `callTelegramApi()` - 12 edges
 10. `react` - 11 edges
@@ -54,23 +53,23 @@
 ## Import Cycles
 - None detected.
 
-## Communities (10 total, 0 thin omitted)
+## Communities (9 total, 0 thin omitted)
 
 ### Community 0 - "telegram.ts"
 Cohesion: 0.16
-Nodes (38): startServer(), addAuditLog(), addSyncError(), clearConversationState(), deleteProfile(), getProfileById(), getSystemSetting(), saveProfile() (+30 more)
+Nodes (39): startServer(), addAuditLog(), addSyncError(), clearConversationState(), getConversationState(), getProfileById(), getSystemSetting(), saveProfile() (+31 more)
 
 ### Community 1 - "App.tsx"
 Cohesion: 0.10
 Nodes (28): lucide-react, react, react-dom, App(), AdminPanel(), AdminPanelProps, AdminTab, AgeModal() (+20 more)
 
 ### Community 2 - "package.json"
-Cohesion: 0.06
-Nodes (32): name, private, type, version, autoprefixer, cors, dotenv, esbuild (+24 more)
+Cohesion: 0.05
+Nodes (39): name, private, scripts, build, clean, dev, lint, start (+31 more)
 
 ### Community 3 - "db.ts"
-Cohesion: 0.11
-Nodes (33): multer, addCommissionLog(), CommissionLog, createCustomerRequest(), DATA_DIR, DB_FILE, getAllProfiles(), getAuditLogs() (+25 more)
+Cohesion: 0.13
+Nodes (31): addCommissionLog(), CommissionLog, createCustomerRequest(), DATA_DIR, DB_FILE, deleteProfile(), getAllProfiles(), getAuditLogs() (+23 more)
 
 ### Community 4 - "compilerOptions"
 Cohesion: 0.12
@@ -92,10 +91,6 @@ Nodes (7): ⚡ Alternativa 1 (Para Pruebas Rápida desde tu PC): Cloudflare Tunn
 Cohesion: 0.29
 Nodes (6): 1. Reutilización Inteligente, 2. Claridad y Legibilidad sobre Brevedad Forzada, 3. Alcance Preciso (Anti-Sobreingeniería), 4. Flexibilidad Arquitectónica, 5. Cero Recortes en lo Crítico, Filosofía Pragmática y Flexible (Ponytail Adaptativo)
 
-### Community 9 - "scripts"
-Cohesion: 0.33
-Nodes (6): scripts, build, clean, dev, lint, start
-
 ## Knowledge Gaps
 - **16 isolated node(s):** `@google/genai`, `motion`, `sql.js`, `@types/cors`, `@types/express` (+11 more)
   These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 105 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
@@ -112,8 +107,8 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `devDependencies` connect `devDependencies` to `package.json`?**
   _High betweenness centrality (0.097) - this node is a cross-community bridge._
 - **Should `package.json` be split into smaller, more focused modules?**
-  _Cohesion score 0.0620782726045884 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.051207729468599035 - nodes in this community are weakly interconnected._
 - **Why does `@libsql/client` connect `package.json` to `db.ts`?**
   _High betweenness centrality (0.070) - this node is a cross-community bridge._
 - **Should `db.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.11428571428571428 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.1265597147950089 - nodes in this community are weakly interconnected._

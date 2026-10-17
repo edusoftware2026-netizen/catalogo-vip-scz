@@ -195,8 +195,13 @@ async function initTables(c) {
   `);
   await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('telegram_only_access', 'true')");
   await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('auto_reply_delay_minutes', '10')");
-  await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('bot_username', 'CatalogoVIPSCZBot')");
+  await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('bot_username', 'Iam_Dani_Catalogo_VIP_bot')");
   await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('admin_contact_username', 'danii001')");
+  await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('publish_destination', 'bot_and_channel')");
+  try {
+    await c.execute("UPDATE system_settings SET value = 'Iam_Dani_Catalogo_VIP_bot' WHERE key = 'bot_username' AND value = 'CatalogoVIPSCZBot'");
+  } catch {
+  }
 }
 async function seedInitialData(c) {
   const check = await c.execute("SELECT COUNT(*) as count FROM profiles");
@@ -681,15 +686,15 @@ if (!import_fs2.default.existsSync(UPLOADS_DIR)) {
 function getBotConfig() {
   const token = process.env.BOT_TOKEN || "";
   const storedUsername = getSystemSetting("bot_username");
-  let username = (storedUsername || process.env.BOT_USERNAME || "CatalogoVIPSCZBot").replace(/^@/, "").trim();
-  if (username.toLowerCase() === "catalogovipscz") {
-    username = "CatalogoVIPSCZBot";
+  let username = (process.env.BOT_USERNAME || storedUsername || "Iam_Dani_Catalogo_VIP_bot").replace(/^@/, "").trim();
+  if (username.toLowerCase() === "catalogovipscz" || username.toLowerCase() === "catalogovipsczbot") {
+    username = (process.env.BOT_USERNAME || "Iam_Dani_Catalogo_VIP_bot").replace(/^@/, "").trim();
   }
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET || "secret_token_santa_cruz";
-  const channelId = process.env.CHANNEL_ID || "-1003650435412";
+  const channelId = process.env.CHANNEL_ID || getSystemSetting("channel_id") || "-1003998507870";
   const adminIds = (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((id) => id.trim()).filter(Boolean);
   const signingSecret = process.env.ADMIN_SIGNING_SECRET || "secret_jwt_key_santa_cruz";
-  const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || "http://localhost:3000";
+  const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || "https://iam-dani-catalogo-vip-scz.onrender.com";
   return { token, username, secret, channelId, adminIds, signingSecret, baseUrl };
 }
 function isAdminUser(telegramUserId) {
@@ -832,15 +837,23 @@ ${profile.description}
 \u2022 Servicios exclusivos para personas mayores de 18 a\xF1os.
 \u2022 Coordinaci\xF3n y confirmaci\xF3n previa directamente por privado.
 `;
-  const botCatalogUrl = `https://t.me/${username}?start=cat`;
-  const reqUrl = `https://t.me/${username}?start=req_${profile.id}`;
+  const pubMode = getSystemSetting("publish_destination") || "bot_and_channel";
+  if (pubMode === "only_bot") {
+    return { success: true, message: "Modo Solo Bot activo: no se publica en el canal de Telegram" };
+  }
+  const webCatalogUrl = baseUrl;
+  const botChatUrl = `https://t.me/${username}?start=cat`;
+  const botReserveUrl = `https://t.me/${username}?start=req_${profile.id}`;
   const replyMarkup = {
     inline_keyboard: [
       [
-        { text: "\u{1F48E} Ver Cat\xE1logo VIP", url: botCatalogUrl }
+        { text: "\u{1F48E} Ver Cat\xE1logo VIP", url: webCatalogUrl }
       ],
       [
-        { text: "\u{1F4F2} Solicitar M\xE9todo de Pago (QR)", url: reqUrl }
+        { text: "\u{1F916} Abrir Bot de Telegram", url: botChatUrl }
+      ],
+      [
+        { text: "\u{1F4F2} Solicitar Reserva (QR)", url: botReserveUrl }
       ]
     ]
   };
@@ -1866,6 +1879,7 @@ router.get("/info", (req, res) => {
     admin_contact_username: getSystemSetting("admin_contact_username") || "danii001",
     pinned_message_text: getSystemSetting("pinned_message_text") || "",
     pinned_message_active: getSystemSetting("pinned_message_active") === "true",
+    publish_destination: getSystemSetting("publish_destination") || "bot_and_channel",
     database: getDbInfo(),
     legal_notice: "Cat\xE1logo privado exclusivo para mayores de 18 a\xF1os."
   });
@@ -2147,6 +2161,17 @@ router.post("/admin/profiles/:id/publish", requireAdminAuth, async (req, res) =>
     res.status(500).json({ error: "Error al sincronizar canal", details: err?.message });
   }
 });
+router.post("/admin/profiles/:id/sync-channel", requireAdminAuth, async (req, res) => {
+  try {
+    const profileId = req.params.id;
+    const adminId = req.adminUserId || "Admin Web";
+    const result = await syncProfileToChannel(profileId, adminId);
+    broadcastEvent("PROFILE_UPDATED", { id: profileId });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: "Error al sincronizar canal", details: err?.message });
+  }
+});
 router.post("/admin/profiles/:id/photos", requireAdminAuth, upload.array("photos", 5), async (req, res) => {
   try {
     const profileId = req.params.id;
@@ -2169,19 +2194,61 @@ router.post("/admin/profiles/:id/photos", requireAdminAuth, upload.array("photos
     }
     if (files && files.length > 0) {
       for (const f of files) {
-        const photoUrl = `/uploads/${f.filename}`;
-        uploadedUrls.push(photoUrl);
+        let nativeTgUrl = null;
+        if (config.token) {
+          const targetChat = config.channelId || config.adminIds && config.adminIds[0];
+          if (targetChat) {
+            try {
+              const fileData = import_fs3.default.readFileSync(f.path);
+              const blob = new Blob([fileData]);
+              const formData = new FormData();
+              formData.append("chat_id", targetChat);
+              formData.append("photo", blob, f.originalname);
+              formData.append("caption", `\u{1F4F8} [Media Host] ${profile.name}`);
+              const tgRes = await fetch(`https://api.telegram.org/bot${config.token}/sendPhoto`, {
+                method: "POST",
+                body: formData
+              });
+              const tgJson = await tgRes.json();
+              if (tgJson.ok && tgJson.result?.photo?.length > 0) {
+                const largest = tgJson.result.photo[tgJson.result.photo.length - 1];
+                nativeTgUrl = await getTelegramFileUrl(largest.file_id);
+                const pubMode2 = getSystemSetting("publish_destination") || "bot_and_channel";
+                if (pubMode2 === "only_bot" && tgJson.result?.message_id) {
+                  try {
+                    await fetch(`https://api.telegram.org/bot${config.token}/deleteMessage?chat_id=${targetChat}&message_id=${tgJson.result.message_id}`);
+                  } catch {
+                  }
+                }
+              } else {
+                console.warn("[Telegram sendPhoto error]:", tgJson?.description || tgJson);
+              }
+            } catch (uploadErr) {
+              console.warn("[Telegram Upload Exception]:", uploadErr?.message || uploadErr);
+            }
+          }
+        }
+        if (nativeTgUrl) {
+          uploadedUrls.push(nativeTgUrl);
+        } else {
+          uploadedUrls.push(`/uploads/${f.filename}`);
+        }
       }
     }
     const updatedPhotos = [...profile.photos || [], ...uploadedUrls];
     const updated = await saveProfile({ id: profileId, photos: updatedPhotos });
     const adminId = req.adminUserId || "Admin Web";
     await addAuditLog("UPLOAD_PHOTOS", adminId, `${uploadedUrls.length} fotograf\xEDas agregadas a ${profile.name}`, profileId);
+    const pubMode = getSystemSetting("publish_destination") || "bot_and_channel";
     let syncResult = null;
-    try {
-      syncResult = await syncProfileToChannel(profileId, adminId);
-    } catch (syncErr) {
-      console.warn("[Sync Channel on Photo Upload]:", syncErr?.message || syncErr);
+    if (pubMode !== "only_bot") {
+      try {
+        syncResult = await syncProfileToChannel(profileId, adminId);
+      } catch (syncErr) {
+        console.warn("[Sync Channel on Photo Upload]:", syncErr?.message || syncErr);
+      }
+    } else {
+      syncResult = { success: true, message: "Modo Solo Bot activo: no se publica en el canal" };
     }
     broadcastEvent("PROFILE_UPDATED", updated);
     res.json({ success: true, profile: updated, new_photos: uploadedUrls, sync_result: syncResult });
@@ -2301,6 +2368,10 @@ router.post("/admin/settings", requireAdminAuth, async (req, res) => {
     if (auto_reply_delay_minutes !== void 0) {
       saveSystemSetting("auto_reply_delay_minutes", String(auto_reply_delay_minutes));
     }
+    const { publish_destination } = req.body;
+    if (publish_destination !== void 0) {
+      saveSystemSetting("publish_destination", String(publish_destination));
+    }
     const adminId = req.adminUserId || "Admin Web";
     await addAuditLog("UPDATE_SETTINGS", adminId, "Ajustes de Telegram y bot actualizados");
     const updatedConfig = getBotConfig();
@@ -2312,6 +2383,7 @@ router.post("/admin/settings", requireAdminAuth, async (req, res) => {
       admin_contact_username: getSystemSetting("admin_contact_username") || "danii001",
       telegram_only_access: isTelegramOnly,
       auto_reply_delay_minutes: autoReplyDelay,
+      publish_destination: getSystemSetting("publish_destination") || "bot_and_channel",
       qr_image_url: getSystemSetting("qr_image_url") || ""
     });
   } catch (err) {

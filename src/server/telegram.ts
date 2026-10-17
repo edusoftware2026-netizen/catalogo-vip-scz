@@ -33,18 +33,18 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 export function getBotConfig() {
   const token = process.env.BOT_TOKEN || '';
   const storedUsername = getSystemSetting('bot_username');
-  let username = (storedUsername || process.env.BOT_USERNAME || 'CatalogoVIPSCZBot').replace(/^@/, '').trim();
-  if (username.toLowerCase() === 'catalogovipscz') {
-    username = 'CatalogoVIPSCZBot';
+  let username = (process.env.BOT_USERNAME || storedUsername || 'Iam_Dani_Catalogo_VIP_bot').replace(/^@/, '').trim();
+  if (username.toLowerCase() === 'catalogovipscz' || username.toLowerCase() === 'catalogovipsczbot') {
+    username = (process.env.BOT_USERNAME || 'Iam_Dani_Catalogo_VIP_bot').replace(/^@/, '').trim();
   }
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET || 'secret_token_santa_cruz';
-  const channelId = process.env.CHANNEL_ID || '-1003650435412';
+  const channelId = process.env.CHANNEL_ID || getSystemSetting('channel_id') || '-1003998507870';
   const adminIds = (process.env.ADMIN_TELEGRAM_IDS || '')
     .split(',')
     .map(id => id.trim())
     .filter(Boolean);
   const signingSecret = process.env.ADMIN_SIGNING_SECRET || 'secret_jwt_key_santa_cruz';
-  const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || 'http://localhost:3000';
+  const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || 'https://iam-dani-catalogo-vip-scz.onrender.com';
 
   return { token, username, secret, channelId, adminIds, signingSecret, baseUrl };
 }
@@ -207,16 +207,28 @@ ${profile.description}
 • Coordinación y confirmación previa directamente por privado.
 `;
 
-  const botCatalogUrl = `https://t.me/${username}?start=cat`;
-  const reqUrl = `https://t.me/${username}?start=req_${profile.id}`;
+  const pubMode = getSystemSetting('publish_destination') || 'bot_and_channel';
+  if (pubMode === 'only_bot') {
+    return { success: true, message: 'Modo Solo Bot activo: no se publica en el canal de Telegram' };
+  }
+
+  // Enlace web directo al Catálogo VIP / Mini App
+  const webCatalogUrl = baseUrl;
+  // Enlace directo al Bot de Telegram
+  const botChatUrl = `https://t.me/${username}?start=cat`;
+  // Enlace directo de reserva con la modelo específica
+  const botReserveUrl = `https://t.me/${username}?start=req_${profile.id}`;
 
   const replyMarkup = {
     inline_keyboard: [
       [
-        { text: '💎 Ver Catálogo VIP', url: botCatalogUrl }
+        { text: '💎 Ver Catálogo VIP', url: webCatalogUrl }
       ],
       [
-        { text: '📲 Solicitar Método de Pago (QR)', url: reqUrl }
+        { text: '🤖 Abrir Bot de Telegram', url: botChatUrl }
+      ],
+      [
+        { text: '📲 Solicitar Reserva (QR)', url: botReserveUrl }
       ]
     ]
   };

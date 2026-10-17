@@ -175,8 +175,12 @@ async function initTables(c: Client): Promise<void> {
   // Ajustes base por defecto
   await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('telegram_only_access', 'true')");
   await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('auto_reply_delay_minutes', '10')");
-  await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('bot_username', 'CatalogoVIPSCZBot')");
+  await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('bot_username', 'Iam_Dani_Catalogo_VIP_bot')");
   await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('admin_contact_username', 'danii001')");
+  await c.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('publish_destination', 'bot_and_channel')");
+  try {
+    await c.execute("UPDATE system_settings SET value = 'Iam_Dani_Catalogo_VIP_bot' WHERE key = 'bot_username' AND value = 'CatalogoVIPSCZBot'");
+  } catch {}
 }
 
 async function seedInitialData(c: Client): Promise<void> {

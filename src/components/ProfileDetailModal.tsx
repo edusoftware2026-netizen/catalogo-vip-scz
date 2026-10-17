@@ -157,6 +157,9 @@ export const ProfileDetailModal: React.FC<ProfileDetailModalProps> = ({
                   src={photos[activePhotoIdx]}
                   alt={`${profile.name} - Foto ${activePhotoIdx + 1}`}
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+                  }}
                   className="w-full h-full object-cover transition-opacity duration-300"
                 />
 

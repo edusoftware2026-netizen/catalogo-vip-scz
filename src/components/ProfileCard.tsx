@@ -43,6 +43,9 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
           src={currentPhoto}
           alt={profile.name}
           referrerPolicy="no-referrer"
+          onError={(e) => {
+            e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80';
+          }}
           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
         />
 

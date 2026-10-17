@@ -100,6 +100,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     ping?: { success: boolean; latency_ms: number; timestamp: string };
   } | null>(null);
   const [checkingDb, setCheckingDb] = useState(false);
+  const [publishDestination, setPublishDestination] = useState<'bot_and_channel' | 'only_bot' | 'only_channel'>('bot_and_channel');
 
 
 
@@ -251,6 +252,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         if (infoData.admin_contact_username) setAdminContactUsername(infoData.admin_contact_username);
         if (infoData.pinned_message_text !== undefined) setPinnedMessageText(infoData.pinned_message_text);
         if (infoData.pinned_message_active !== undefined) setPinnedMessageActive(Boolean(infoData.pinned_message_active));
+        if (infoData.publish_destination) setPublishDestination(infoData.publish_destination);
       }
       if (resComm && resComm.ok) {
         setCommissionLogs(await resComm.json());
@@ -552,10 +554,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const handleSaveSettings = async (e?: React.FormEvent, customOnlyMode?: boolean) => {
+  const handleSaveSettings = async (e?: React.FormEvent, customOnlyMode?: boolean, customPubDestination?: 'bot_and_channel' | 'only_bot' | 'only_channel') => {
     if (e) e.preventDefault();
     setLoading(true);
     const onlyMode = customOnlyMode !== undefined ? customOnlyMode : telegramOnlyMode;
+    const dest = customPubDestination !== undefined ? customPubDestination : publishDestination;
     try {
       const res = await fetch('/api/admin/settings', {
         method: 'POST',
@@ -564,7 +567,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           bot_username: newBotUsername,
           admin_contact_username: adminContactUsername,
           telegram_only_access: onlyMode,
-          auto_reply_delay_minutes: autoReplyDelay
+          auto_reply_delay_minutes: autoReplyDelay,
+          publish_destination: dest
         })
       });
       const data = await res.json();
@@ -574,6 +578,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         if (data.admin_contact_username) setAdminContactUsername(data.admin_contact_username);
         if (data.telegram_only_access !== undefined) setTelegramOnlyMode(data.telegram_only_access);
         if (data.auto_reply_delay_minutes !== undefined) setAutoReplyDelay(String(data.auto_reply_delay_minutes));
+        if (data.publish_destination) setPublishDestination(data.publish_destination);
         fetchData();
       } else {
         setMessage({ type: 'error', text: data.error || 'Error al guardar configuración' });
@@ -1309,6 +1314,86 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       className="py-2 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold transition-all cursor-pointer"
                     >
                       Guardar Mensaje Fijado
+                    </button>
+                  </div>
+                </div>
+
+                {/* DESTINO DE PUBLICACIÓN: BOT + CANAL / SOLO BOT / SOLO CANAL */}
+                <div className="p-5 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Send className="w-4 h-4 text-amber-400" /> Destino de Publicación de Perfiles
+                    </h4>
+                    <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase tracking-wider">
+                      Parametrización
+                    </span>
+                  </div>
+                  <p className="text-zinc-400 text-xs leading-relaxed">
+                    Configura dónde se publicarán los perfiles y fotos al crearlos o actualizarlos desde este panel administrativo:
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPublishDestination('bot_and_channel');
+                        handleSaveSettings(undefined, undefined, 'bot_and_channel');
+                      }}
+                      className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        publishDestination === 'bot_and_channel'
+                          ? 'bg-amber-500/15 border-amber-500/60 shadow-md shadow-amber-500/10'
+                          : 'bg-zinc-900 border-zinc-800 opacity-60 hover:opacity-100 hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-xs text-white">Bot + Canal</span>
+                        {publishDestination === 'bot_and_channel' && <CheckCircle2 className="w-4 h-4 text-amber-400" />}
+                      </div>
+                      <span className="text-[10px] text-zinc-400 leading-relaxed">
+                        Publica en el catálogo del bot/web y también sincroniza automáticamente en el canal de Telegram.
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPublishDestination('only_bot');
+                        handleSaveSettings(undefined, undefined, 'only_bot');
+                      }}
+                      className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        publishDestination === 'only_bot'
+                          ? 'bg-amber-500/15 border-amber-500/60 shadow-md shadow-amber-500/10'
+                          : 'bg-zinc-900 border-zinc-800 opacity-60 hover:opacity-100 hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-xs text-white">Solo Bot</span>
+                        {publishDestination === 'only_bot' && <CheckCircle2 className="w-4 h-4 text-amber-400" />}
+                      </div>
+                      <span className="text-[10px] text-zinc-400 leading-relaxed">
+                        Solo visible en el Catálogo Web / Mini App. NO envía publicaciones al canal público.
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPublishDestination('only_channel');
+                        handleSaveSettings(undefined, undefined, 'only_channel');
+                      }}
+                      className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        publishDestination === 'only_channel'
+                          ? 'bg-amber-500/15 border-amber-500/60 shadow-md shadow-amber-500/10'
+                          : 'bg-zinc-900 border-zinc-800 opacity-60 hover:opacity-100 hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-xs text-white">Solo Canal</span>
+                        {publishDestination === 'only_channel' && <CheckCircle2 className="w-4 h-4 text-amber-400" />}
+                      </div>
+                      <span className="text-[10px] text-zinc-400 leading-relaxed">
+                        Sincroniza y publica prioritariamente en el canal público de Telegram.
+                      </span>
                     </button>
                   </div>
                 </div>

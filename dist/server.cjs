@@ -692,7 +692,12 @@ function getBotConfig() {
   }
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET || "secret_token_santa_cruz";
   const channelId = process.env.CHANNEL_ID || getSystemSetting("channel_id") || "-1003998507870";
-  const adminIds = (process.env.ADMIN_TELEGRAM_IDS || "").split(",").map((id) => id.trim()).filter(Boolean);
+  const envAdminIds = (process.env.ADMIN_TELEGRAM_IDS || "").split(",");
+  const settingAdminIds = (getSystemSetting("admin_telegram_ids") || "").split(",");
+  const lastAdminChatId = getSystemSetting("last_admin_chat_id");
+  const allIds = [...envAdminIds, ...settingAdminIds];
+  if (lastAdminChatId) allIds.push(lastAdminChatId);
+  const adminIds = Array.from(new Set(allIds)).map((id) => id.trim()).filter(Boolean);
   const signingSecret = process.env.ADMIN_SIGNING_SECRET || "secret_jwt_key_santa_cruz";
   const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || "https://iam-dani-catalogo-vip-scz.onrender.com";
   return { token, username, secret, channelId, adminIds, signingSecret, baseUrl };
@@ -911,12 +916,13 @@ ${profile.description}
     return { success: false, message: humanTip };
   }
 }
-async function sendPhotoToUser(chatId, photoUrl, caption) {
+async function sendPhotoToUser(chatId, photoUrl, caption, options = {}) {
   return await callTelegramApi("sendPhoto", {
     chat_id: chatId,
     photo: photoUrl,
     caption: caption || "",
-    parse_mode: "Markdown"
+    parse_mode: "Markdown",
+    ...options
   });
 }
 function generateAdminMagicToken(telegramUserId) {
@@ -952,6 +958,21 @@ async function processTelegramUpdate(update) {
   const chatId = message.chat.id;
   const fromId = message.from?.id;
   const text = message.text ? message.text.trim() : "";
+  const fromUser = message.from;
+  const fromUsername = (fromUser?.username || "").replace(/^@/, "").toLowerCase();
+  const cleanAdminUser = (getSystemSetting("admin_contact_username") || "danii001").toLowerCase();
+  if (fromId && (fromUsername === cleanAdminUser || isAdminUser(fromId))) {
+    try {
+      await saveSystemSetting("last_admin_chat_id", String(chatId));
+      const currentSetting = (getSystemSetting("admin_telegram_ids") || "").split(",").map((s) => s.trim()).filter(Boolean);
+      if (!currentSetting.includes(String(chatId))) {
+        currentSetting.push(String(chatId));
+        await saveSystemSetting("admin_telegram_ids", currentSetting.join(","));
+      }
+    } catch (saveErr) {
+      console.warn("[Admin Auto-Register Warning]:", saveErr);
+    }
+  }
   if (text.startsWith("/start req_") || text.startsWith("/start pago_") || text.startsWith("/reservar ") || text.startsWith("/pago ")) {
     const profileId = text.replace("/start req_", "").replace("/start pago_", "").replace("/reservar ", "").replace("/pago ", "").trim();
     await handleClientAvailabilityRequest(message, profileId);
@@ -2155,32 +2176,66 @@ router.post("/requests", upload.single("receipt"), async (req, res) => {
 
 Hemos recibido tu comprobante de comisi\xF3n y solicitud para *${profile.name}*.
 
-La Administradora (@${adminContactUsername}) lo verificar\xE1 de inmediato y te contactar\xE1 en privado.`;
+La Administradora verificar\xE1 tu pago y te escribir\xE1 directamente por mensaje privado a tu Telegram para coordinar tu cita.`;
       await sendMessage(String(tg_user_id), userConfirmText);
       scheduleAutoReply(request.id, String(tg_user_id), client_name || "Estimado/a", profile.name);
     }
+    const replyButtons = [];
+    const cleanClientUser = client_telegram ? client_telegram.replace("@", "").trim() : "";
+    if (cleanClientUser) {
+      replyButtons.push([
+        { text: `\u{1F4AC} Escribir al Privado de @${cleanClientUser}`, url: `https://t.me/${cleanClientUser}` }
+      ]);
+    } else if (tg_user_id) {
+      replyButtons.push([
+        { text: `\u{1F4AC} Escribir al Privado del Cliente`, url: `tg://user?id=${tg_user_id}` }
+      ]);
+    }
     const adminNotice = `
-\u{1F514} *NUEVA SOLICITUD Y COMPROBANTE DE COMISI\xD3N* \u{1F514}
+\u{1F514} *NUEVA RESERVA Y COMPROBANTE DE COMISI\xD3N* \u{1F514}
 
-\u{1F464} *Cliente*: ${client_name || "An\xF3nimo"} ${client_telegram ? "(@" + client_telegram.replace("@", "") + ")" : ""}
-\u{1F194} *Telegram ID*: \`${tg_user_id || "No detectado"}\`
-\u{1F460} *Perfil*: ${profile.name} (TARIFA SERVICIO: Bs. ${profile.rate_bs})
+\u{1F460} *Modelo / Dama*: *${profile.name}*
 \u{1F3F7}\uFE0F *Comisi\xF3n de Reserva*: *Bs. ${profile.commission_bs}*
-${receipt_url ? "\u{1F4F8} *Comprobante de Pago Adjuntado*: S\xED" : "\u{1F4F8} *Comprobante*: No adjuntado"}
-\u{1F4DD} *Mensaje del Cliente*: ${notes || "Sin observaciones"}
-\u{1F4C5} *Fecha*: ${(/* @__PURE__ */ new Date()).toLocaleString()}
+\u{1F4B0} *Tarifa de Servicio*: Bs. ${profile.rate_bs}
 
-\u{1F4AC} _Para responder al cliente envi\xE1ndole el QR de COMISI\xD3N, escribe:_
-\`/qr ${tg_user_id || "ID_CLIENTE"}\`
-    `;
-    for (const adminId of config.adminIds) {
-      if (adminId) {
+\u{1F464} *DATOS DEL CLIENTE PARA CONTACTARLE:*
+\u2022 *Nombre*: ${client_name || "Cliente Cat\xE1logo"}
+\u2022 *Usuario Telegram*: ${cleanClientUser ? "@" + cleanClientUser : "No configurado"}
+\u2022 *ID de Telegram*: \`${tg_user_id || "No detectado"}\`
+${cleanClientUser ? `\u{1F449} *Chat Privado:* https://t.me/${cleanClientUser}` : tg_user_id ? `\u{1F449} *Chat Privado:* tg://user?id=${tg_user_id}` : ""}
+
+\u{1F4DD} *Mensaje del Cliente*:
+"${notes || "Sin observaciones"}"
+
+\u{1F4F8} *Comprobante de Pago*: ${receipt_url ? "Adjuntado (validado)" : "No recibido"}
+\u{1F4C5} *Fecha*: ${(/* @__PURE__ */ new Date()).toLocaleString("es-BO", { timeZone: "America/La_Paz" })}
+
+\u{1F4AC} _Toca el bot\xF3n abajo para abrir directamente la conversaci\xF3n privada con el cliente y escribirle._
+    `.trim();
+    const adminRecipients = /* @__PURE__ */ new Set();
+    for (const aId of config.adminIds) {
+      if (aId) adminRecipients.add(String(aId));
+    }
+    const lastAdminChat = getSystemSetting("last_admin_chat_id");
+    if (lastAdminChat) adminRecipients.add(String(lastAdminChat));
+    if (adminRecipients.size === 0 && config.channelId) {
+      adminRecipients.add(String(config.channelId));
+    }
+    const replyMarkup = replyButtons.length > 0 ? { inline_keyboard: replyButtons } : void 0;
+    for (const adminId of adminRecipients) {
+      try {
         if (receipt_url) {
           const fullReceiptUrl = receipt_url.startsWith("http") ? receipt_url : `${config.baseUrl}${receipt_url}`;
-          await sendPhotoToUser(adminId, fullReceiptUrl, adminNotice);
+          await sendPhotoToUser(adminId, fullReceiptUrl, adminNotice, {
+            reply_markup: replyMarkup
+          });
         } else {
-          await sendMessage(adminId, adminNotice);
+          await sendMessage(adminId, adminNotice, {
+            reply_markup: replyMarkup
+          });
         }
+      } catch (adminSendErr) {
+        console.error(`[Error notifying admin ${adminId}]:`, adminSendErr);
       }
     }
     broadcastEvent("NEW_REQUEST", request);
@@ -2550,9 +2605,12 @@ router.post("/admin/settings", requireAdminAuth, async (req, res) => {
     if (auto_reply_delay_minutes !== void 0) {
       saveSystemSetting("auto_reply_delay_minutes", String(auto_reply_delay_minutes));
     }
-    const { publish_destination } = req.body;
+    const { publish_destination, admin_telegram_ids } = req.body;
     if (publish_destination !== void 0) {
       saveSystemSetting("publish_destination", String(publish_destination));
+    }
+    if (admin_telegram_ids !== void 0) {
+      saveSystemSetting("admin_telegram_ids", String(admin_telegram_ids).trim());
     }
     const adminId = req.adminUserId || "Admin Web";
     await addAuditLog("UPDATE_SETTINGS", adminId, "Ajustes de Telegram y bot actualizados");
@@ -2563,6 +2621,7 @@ router.post("/admin/settings", requireAdminAuth, async (req, res) => {
       success: true,
       bot_username: updatedConfig.username,
       admin_contact_username: getSystemSetting("admin_contact_username") || "danii001",
+      admin_telegram_ids: getSystemSetting("admin_telegram_ids") || "",
       telegram_only_access: isTelegramOnly,
       auto_reply_delay_minutes: autoReplyDelay,
       publish_destination: getSystemSetting("publish_destination") || "bot_and_channel",

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Profile, CustomerRequest, AuditLog, SyncErrorLog, ProfileStatus } from '../types';
 import {
   X,
@@ -26,7 +26,46 @@ import {
   MessageSquare,
   Database,
   Cloud,
+  ChevronDown,
+  ImageIcon,
 } from 'lucide-react';
+
+// ── Utilidades de UX para pantallas pequeñas ────────────────────────────────
+
+// Etiqueta legible del origen de una imagen: URL nativa de Telegram vs local
+const photoSourceLabel = (url: string): { text: string; cls: string } => {
+  if (url.startsWith('https://api.telegram.org')) return { text: 'TG', cls: 'bg-sky-500/20 text-sky-300 border-sky-500/40' };
+  if (url.startsWith('http')) return { text: 'URL', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' };
+  return { text: 'LOCAL', cls: 'bg-zinc-800 text-zinc-400 border-zinc-700' };
+};
+
+// Sección plegable: colapsa contenido largo (Telegram) para reducir scroll en móviles
+const CollapsibleSection: React.FC<{
+  title: React.ReactNode;
+  defaultOpen?: boolean;
+  summaryRight?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}> = ({ title, defaultOpen = false, summaryRight, children, className = '' }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className={`bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden ${className}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3.5 min-h-12 cursor-pointer text-left active:bg-zinc-900/60 transition-colors"
+      >
+        <span className="flex items-center gap-2 min-w-0 text-sm font-bold text-white">{title}</span>
+        <span className="flex items-center gap-2 shrink-0">
+          {summaryRight}
+          <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
+      {open && <div className="px-4 pb-4 pt-1 space-y-4">{children}</div>}
+    </div>
+  );
+};
 
 interface AdminPanelProps {
   isOpen?: boolean;
@@ -58,6 +97,50 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Toast auto-descartable: en pantallas pequeñas el alert inline quedaba fuera de vista
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => setMessage(null), message.type === 'error' ? 7000 : 4500);
+    return () => clearTimeout(t);
+  }, [message]);
+
+  // Previsualizaciones locales (object URLs) de las fotos seleccionadas antes de subirlas
+  const photoPreviewsRef = useRef<string[]>([]);
+  const [photoPreviews, setPhotoPreviewsState] = useState<string[]>([]);
+  const setPhotoPreviews = (urls: string[]) => {
+    photoPreviewsRef.current.forEach(u => URL.revokeObjectURL(u));
+    photoPreviewsRef.current = urls;
+    setPhotoPreviewsState(urls);
+  };
+
+  // Limpieza al desmontar
+  useEffect(() => {
+    return () => {
+      photoPreviewsRef.current.forEach(u => URL.revokeObjectURL(u));
+    };
+  }, []);
+
+  // Manejador único del selector de archivos: genera previsualizaciones y limpia object URLs
+  const handlePhotoFilesChange = (files: FileList | null) => {
+    if (files && files.length > 0) {
+      setPhotoPreviews(Array.from(files).map(f => URL.createObjectURL(f)));
+    } else {
+      setPhotoPreviews([]);
+    }
+    setSelectedPhotoFiles(files);
+  };
+
+  // Quitar una foto de la cola de previsualización antes de subirla (sin reordenar índices)
+  const removePhotoPreviewAt = (idx: number, e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    if (!selectedPhotoFiles) return;
+    const dt = new DataTransfer();
+    Array.from(selectedPhotoFiles).forEach((f, i) => { if (i !== idx) dt.items.add(f); });
+    handlePhotoFilesChange(dt.files.length > 0 ? dt.files : null);
+    if (photoInputRef.current) photoInputRef.current.value = '';
+  };
+
   // Edit / New Form State
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [formData, setFormData] = useState<{
@@ -80,6 +163,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<FileList | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [newBotUsername, setNewBotUsername] = useState(botUsername || '');
   const [adminContactUsername, setAdminContactUsername] = useState('danii001');
   const [telegramOnlyMode, setTelegramOnlyMode] = useState(false);
@@ -370,7 +454,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               headers: { Authorization: `Bearer ${token}` },
               body
             });
-            setSelectedPhotoFiles(null);
+            handlePhotoFilesChange(null);
           } catch { /* Ignore photo error */ }
         }
         setMessage({ type: 'success', text: `Perfil ${isEdit ? 'actualizado' : 'creado'} y fotografías vinculadas con éxito.` });
@@ -404,7 +488,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const data = await res.json();
       if (res.ok && data.success) {
         setMessage({ type: 'success', text: 'Fotografías subidas e integradas al perfil.' });
-        setSelectedPhotoFiles(null);
+        handlePhotoFilesChange(null);
         if (editingProfile && data.profile) setEditingProfile(data.profile);
         fetchData();
       } else {
@@ -727,12 +811,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // ── Tab config ──────────────────────────────────────────────────────────────
   const tabs: { id: AdminTab; icon: React.ReactNode; label: string; badge?: number }[] = [
-    { id: 'profiles', icon: <Users className="w-4 h-4" />, label: 'Perfiles', badge: profiles.length },
-    { id: 'requests', icon: <Inbox className="w-4 h-4" />, label: 'Solicitudes', badge: requests.length },
-    { id: 'new', icon: <Plus className="w-4 h-4 text-amber-400" />, label: 'Nuevo' },
-    { id: 'telegram', icon: <QrCode className="w-4 h-4" />, label: 'Telegram' },
-    { id: 'commissions', icon: <Banknote className="w-4 h-4" />, label: 'Comisiones', badge: commissionLogs.length },
-    { id: 'audit', icon: <Activity className="w-4 h-4" />, label: 'Auditoría' },
+    { id: 'profiles', icon: <Users className="w-4 h-4 sm:w-5 sm:h-5" />, label: 'Perfiles', badge: profiles.length },
+    { id: 'requests', icon: <Inbox className="w-4 h-4 sm:w-5 sm:h-5" />, label: 'Solicitudes', badge: requests.filter(r => r.status !== 'comision_pagada').length || requests.length },
+    { id: 'new', icon: <Plus className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />, label: editingProfile ? 'Editar' : 'Nuevo' },
+    { id: 'telegram', icon: <QrCode className="w-4 h-4 sm:w-5 sm:h-5" />, label: 'Telegram' },
+    { id: 'commissions', icon: <Banknote className="w-4 h-4 sm:w-5 sm:h-5" />, label: 'Comisiones', badge: commissionLogs.length },
+    { id: 'audit', icon: <Activity className="w-4 h-4 sm:w-5 sm:h-5" />, label: 'Auditoría' },
+  ];
+
+  // ── Chips de estado táctiles (reemplazan <select>, difíciles de usar en móvil) ──
+  const statusChips: { value: ProfileStatus; label: string; cls: string }[] = [
+    { value: 'disponible', label: '🟢 Disponible', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60' },
+    { value: 'ocupada', label: '🔴 Ocupada', cls: 'bg-rose-500/20 text-rose-300 border-rose-500/60' },
+    { value: 'pausada', label: '⏸️ Pausada', cls: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/60' },
+    { value: 'borrador', label: '📁 Borrador', cls: 'bg-zinc-800 text-zinc-200 border-zinc-500' },
+    { value: 'retirada', label: '🗑️ Retirada', cls: 'bg-zinc-800 text-zinc-400 border-zinc-600' },
   ];
 
   return (
@@ -740,22 +833,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       <div className="w-full max-w-7xl mx-auto flex-1 flex flex-col px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
         <div className="bg-zinc-900/90 border border-zinc-800 rounded-3xl shadow-2xl flex-1 flex flex-col overflow-hidden">
 
-          {/* ── Header ── */}
-          <div className="p-4 sm:p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/60 shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+          {/* ── Header (compacto en pantallas pequeñas) ── */}
+          <div className="px-3 sm:p-6 py-2.5 sm:py-6 border-b border-zinc-800 flex items-center justify-between gap-2 bg-zinc-950/60 shrink-0">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                 <Lock className="w-5 h-5" />
               </div>
-              <div>
-                <h2 className="text-lg font-bold text-white tracking-tight font-serif">
+              <div className="min-w-0">
+                <h2 className="text-sm sm:text-lg font-bold text-white tracking-tight font-serif truncate">
                   Panel Administrativo — Iam Dani
                 </h2>
                 <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                  <span className="text-xs text-zinc-400">
+                  <span className="text-[10px] sm:text-xs text-zinc-400">
                     Canal: <span className="text-amber-400 font-mono">{channelId}</span>
                   </span>
-                  <span className="text-zinc-600">·</span>
-                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  <span className="text-zinc-600 hidden sm:inline">·</span>
+                  <span className={`inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold ${
                     dbInfo?.is_cloud
                       ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                       : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
@@ -768,21 +861,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
               {loading && (
                 <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
               )}
               <button
                 onClick={handleLogout}
-                className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 border border-zinc-700/60"
+                className="p-2 sm:px-3 sm:py-1.5 min-w-11 min-h-11 sm:min-w-0 sm:min-h-0 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-semibold transition-all cursor-pointer flex items-center justify-center sm:gap-1.5 border border-zinc-700/60"
                 title="Cerrar sesión administrativa y volver al login"
+                aria-label="Cerrar sesión"
               >
-                <LogOut className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                <LogOut className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-zinc-400 shrink-0" />
                 <span className="hidden sm:inline">Cerrar Sesión</span>
               </button>
               <button
                 onClick={handleExitApp}
-                className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 hover:text-rose-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border border-rose-500/30 hover:border-rose-500/50"
+                className="px-2.5 sm:px-3 py-2 sm:py-1.5 min-h-11 sm:min-h-0 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 hover:text-rose-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border border-rose-500/30 hover:border-rose-500/50"
                 title="Cerrar la página / Salir de la aplicación"
               >
                 <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
@@ -800,29 +894,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           </div>
 
-        {/* ── Global Alert Notification ── */}
+          {/* ── Global Toast Notification (flotante, visible sin scrollear) ── */}
         {message && (
-          <div className={`shrink-0 px-6 py-3 text-xs font-medium flex items-center justify-between ${
-            message.type === 'success'
-              ? 'bg-emerald-500/15 text-emerald-300 border-b border-emerald-500/30'
-              : 'bg-rose-500/15 text-rose-300 border-b border-rose-500/30'
-          }`}>
-            <div className="flex items-center gap-2">
-              {message.type === 'success'
-                ? <CheckCircle2 className="w-4 h-4 shrink-0" />
-                : <AlertTriangle className="w-4 h-4 shrink-0" />
-              }
-              <span>{message.text}</span>
+          <div className="pointer-events-none fixed inset-x-0 top-3 z-50 flex justify-center px-3 pt-safe">
+            <div className={`pointer-events-auto w-full max-w-md rounded-2xl border px-4 py-3 text-xs font-medium shadow-2xl animate-toast-in flex items-start justify-between gap-3 ${
+              message.type === 'success'
+                ? 'bg-zinc-900/95 border-emerald-500/40 text-emerald-300'
+                : 'bg-zinc-900/95 border-rose-500/40 text-rose-300'
+            }`}>
+              <div className="flex items-start gap-2 min-w-0">
+                {message.type === 'success'
+                  ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                  : <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                }
+                <span className="wrap-break-word">{message.text}</span>
+              </div>
+              <button onClick={() => setMessage(null)} aria-label="Cerrar notificación" className="opacity-60 hover:opacity-100 text-lg leading-none cursor-pointer shrink-0 min-w-8 min-h-8 -mt-1 -mr-1 flex items-center justify-center">×</button>
             </div>
-            <button onClick={() => setMessage(null)} className="opacity-60 hover:opacity-100 ml-4 text-lg leading-none cursor-pointer">×</button>
           </div>
         )}
 
         {/* ── Body ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
 
-          {/* ── Tab Bar ── */}
-          <div className="flex items-center gap-0.5 px-3 sm:px-5 pt-3 bg-zinc-950/40 border-b border-zinc-800/80 overflow-x-auto scrollbar-none shrink-0">
+          {/* ── Tab Bar: fija en la parte inferior del viewport en pantallas pequeñas (estilo Mini App) ── */}
+          <div className="flex items-center gap-0.5 px-3 sm:px-5 pt-3 bg-zinc-950/40 border-b border-zinc-800/80 overflow-x-auto scrollbar-none shrink-0 max-sm:hidden">
             {tabs.map(tab => (
               <button
                 key={tab.id}
@@ -850,7 +946,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
 
           {/* ── Tab Views ── */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6 pb-28 sm:pb-6">
 
             {/* TAB: PROFILES LIST */}
             {activeTab === 'profiles' && (
@@ -966,7 +1062,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </h3>
 
                 <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
                     <div>
                       <label className="block text-zinc-400 mb-1 font-semibold">Nombre Público *</label>
                       <input
@@ -974,7 +1070,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         required
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                        className="w-full px-3 min-h-11 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                       />
                     </div>
 
@@ -982,23 +1078,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <label className="block text-zinc-400 mb-1 font-semibold">Edad (Mínimo 18) *</label>
                       <input
                         type="number"
+                        inputMode="numeric"
                         min={18}
                         required
                         value={formData.age}
                         onChange={(e) => setFormData({ ...formData, age: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                        className="w-full px-3 min-h-11 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-3 sm:gap-4">
                     <div>
                       <label className="block text-zinc-400 mb-1 font-semibold">TARIFA SERVICIO (Bs.)</label>
                       <input
                         type="number"
+                        inputMode="numeric"
                         value={formData.rate_bs}
                         onChange={(e) => setFormData({ ...formData, rate_bs: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                        className="w-full px-3 min-h-11 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                       />
                     </div>
 
@@ -1006,26 +1104,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <label className="block text-zinc-400 mb-1 font-semibold">COMISIÓN (Bs.)</label>
                       <input
                         type="number"
+                        inputMode="numeric"
                         value={formData.commission_bs}
                         onChange={(e) => setFormData({ ...formData, commission_bs: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 transition-colors"
+                        className="w-full px-3 min-h-11 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 transition-colors"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-zinc-400 mb-1 font-semibold">Estado de Publicación</label>
-                    <select
-                      value={formData.status}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-                      className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50"
-                    >
-                      <option value="borrador">📁 Borrador</option>
-                      <option value="disponible">🟢 Disponible</option>
-                      <option value="ocupada">🔴 Ocupada</option>
-                      <option value="pausada">⏸️ Pausada</option>
-                      <option value="retirada">🗑️ Retirada</option>
-                    </select>
+                    <label className="block text-zinc-400 mb-1.5 font-semibold">Estado de Publicación</label>
+                    {/* Chips táctiles: un toque, sin dropdown nativo difícil en pantallas pequeñas */}
+                    <div className="flex flex-wrap gap-2">
+                      {statusChips.map(chip => (
+                        <button
+                          key={chip.value}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, status: chip.value })}
+                          aria-pressed={formData.status === chip.value}
+                          className={`px-3 py-2 min-h-11 rounded-xl border text-[11px] font-bold transition-all cursor-pointer active:scale-95 ${
+                            formData.status === chip.value
+                              ? `${chip.cls} ring-1 ring-amber-400/60 shadow-md`
+                              : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
+                          }`}
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div>
@@ -1034,7 +1140,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       rows={3}
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      className="w-full px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 resize-none transition-colors"
+                      className="w-full px-3 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-white focus:outline-none focus:border-amber-500/50 resize-none transition-colors"
                     />
                   </div>
 
@@ -1052,26 +1158,60 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             : 'Toca aquí para abrir Galería o Archivos'}
                         </span>
                         <input
+                          ref={photoInputRef}
                           type="file"
                           multiple
                           accept="image/jpeg,image/png,image/webp,image/gif,image/*"
-                          onChange={(e) => setSelectedPhotoFiles(e.target.files)}
+                          onChange={(e) => handlePhotoFilesChange(e.target.files)}
                           className="hidden"
                         />
                       </label>
+
+                      {selectedPhotoFiles && selectedPhotoFiles.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handlePhotoFilesChange(null)}
+                          className="px-3 py-2.5 min-h-11 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-white font-bold text-xs cursor-pointer shrink-0 flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                          title="Quitar todas las fotos seleccionadas"
+                        >
+                          <X className="w-3.5 h-3.5" /> Limpiar
+                        </button>
+                      )}
 
                       {editingProfile && selectedPhotoFiles && selectedPhotoFiles.length > 0 && (
                         <button
                           type="button"
                           onClick={() => handleUploadPhotos(editingProfile.id)}
                           disabled={uploadingPhotos}
-                          className="py-3 px-5 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-extrabold text-xs cursor-pointer shrink-0 shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5 disabled:opacity-60"
+                          className="py-3 px-5 min-h-11 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-extrabold text-xs cursor-pointer shrink-0 shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5 disabled:opacity-60"
                         >
                           <Upload className="w-4 h-4" />
                           {uploadingPhotos ? 'Subiendo...' : 'Subir Fotos Ahora'}
                         </button>
                       )}
                     </div>
+
+                    {/* Previsualización táctil de las fotos elegidas antes de subirlas */}
+                    {photoPreviews.length > 0 && (
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 pt-1">
+                        {photoPreviews.map((url, idx) => (
+                          <div key={url} className="relative rounded-xl overflow-hidden border border-amber-500/30 aspect-square bg-zinc-900">
+                            <img src={url} alt={`Vista previa ${idx + 1}`} className="w-full h-full object-cover" />
+                            <span className="absolute bottom-1 left-1 text-[10px] text-white bg-zinc-950/70 px-1.5 rounded font-mono">
+                              #{idx + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => removePhotoPreviewAt(idx, e)}
+                              className="absolute top-1 right-1 w-7 h-7 flex items-center justify-center rounded-lg bg-rose-600 text-white shadow-md cursor-pointer active:scale-90"
+                              title="Quitar esta foto"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {/* Entrada directa de URL Nativo de Telegram */}
                     <div className="pt-2 space-y-1.5">
                       <label className="block text-[11px] font-bold text-zinc-400">
@@ -1119,22 +1259,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                     {editingProfile.photos && editingProfile.photos.length > 0 ? (
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {editingProfile.photos.map((photoUrl, idx) => (
-                          <div key={idx} className="relative group rounded-xl overflow-hidden border border-zinc-800 aspect-square bg-zinc-900">
+                        {editingProfile.photos.map((photoUrl, idx) => {
+                          const src = photoSourceLabel(photoUrl);
+                          return (
+                          <div key={idx} className="relative rounded-xl overflow-hidden border border-zinc-800 aspect-square bg-zinc-900">
                             <img src={photoUrl} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
                             <button
                               type="button"
                               onClick={() => handleRemovePhoto(photoUrl)}
-                              className="absolute top-1 right-1 p-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                              className="absolute top-1 right-1 w-8 h-8 flex items-center justify-center rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-md cursor-pointer active:scale-90 transition-transform"
                               title="Eliminar foto"
                             >
-                              <X className="w-3.5 h-3.5" />
+                              <X className="w-4 h-4" />
                             </button>
                             <span className="absolute bottom-1 left-1 text-[10px] text-white bg-zinc-950/70 px-1.5 rounded font-mono">
                               #{idx + 1}
                             </span>
+                            {/* Origen de la imagen: TG (Telegram), URL externa o LOCAL */}
+                            <span className={`absolute bottom-1 right-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${src.cls}`}>
+                              {src.text}
+                            </span>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <p className="text-zinc-500 italic">No hay fotos cargadas aún en este perfil.</p>
@@ -1202,15 +1349,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
 
                 {/* QR COMISIÓN */}
-                <div className="p-5 bg-linear-to-br from-amber-500/10 via-zinc-950 to-zinc-950 border-2 border-amber-500/40 rounded-2xl space-y-4 shadow-lg shadow-amber-500/5">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-base font-extrabold text-amber-400 flex items-center gap-2">
-                      <QrCode className="w-5 h-5" /> Imagen QR de COMISIÓN / Pago
-                    </h4>
-                    <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase tracking-wider">
-                      Para Bot y Admin
-                    </span>
-                  </div>
+                <CollapsibleSection
+                  defaultOpen={!qrImageUrl}
+                  title={<><QrCode className="w-4 h-4 text-amber-400 shrink-0" /> Imagen QR de COMISIÓN / Pago</>}
+                  summaryRight={
+                    qrImageUrl
+                      ? <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold uppercase">Cargada</span>
+                      : <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase">Pendiente</span>
+                  }
+                >
+                  <div className="p-4 bg-linear-to-br from-amber-500/10 via-zinc-950 to-zinc-950 border border-amber-500/30 rounded-xl space-y-4 -m-1">
                   <p className="text-zinc-300 text-xs leading-relaxed">
                     Sube aquí la fotografía de tu código QR. El bot la enviará automáticamente o tú puedes usarla con el comando <code className="text-amber-400 font-mono font-bold bg-zinc-900 px-1.5 py-0.5 rounded">/qr ID_CLIENTE</code>.
                   </p>
@@ -1259,27 +1407,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     }}
                     className="text-xs text-zinc-400 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-zinc-950 hover:file:bg-amber-400 cursor-pointer w-full sm:w-auto"
                   />
-                </div>
+                  </div>
+                </CollapsibleSection>
 
                 {/* MENSAJE FIJADO */}
-                <div className="p-5 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Pin className="w-4 h-4 text-amber-400" /> Mensaje Fijado en el Catálogo Web
-                    </h4>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <span className="text-xs text-zinc-400 font-medium">Estado:</span>
-                      <input
-                        type="checkbox"
-                        checked={pinnedMessageActive}
-                        onChange={(e) => setPinnedMessageActive(e.target.checked)}
-                        className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-amber-500 focus:ring-amber-500 cursor-pointer"
-                      />
-                      <span className={`text-xs font-bold ${pinnedMessageActive ? 'text-emerald-400' : 'text-zinc-500'}`}>
-                        {pinnedMessageActive ? 'ACTIVADO' : 'DESACTIVADO'}
-                      </span>
-                    </label>
-                  </div>
+                <CollapsibleSection
+                  title={<><Pin className="w-4 h-4 text-amber-400 shrink-0" /> Mensaje Fijado en el Catálogo Web</>}
+                  summaryRight={
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${pinnedMessageActive ? 'bg-emerald-500/20 text-emerald-300' : 'bg-zinc-800 text-zinc-500'}`}>
+                      {pinnedMessageActive ? 'Activo' : 'Inactivo'}
+                    </span>
+                  }
+                >
+                <div className="space-y-4">
                   <p className="text-zinc-400 text-xs">
                     Fija un anuncio que permanecerá visible en la parte superior del catálogo web.
                   </p>
@@ -1311,23 +1451,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           setLoading(false);
                         }
                       }}
-                      className="py-2 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold transition-all cursor-pointer"
+                      className="py-2 px-4 min-h-11 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold transition-all cursor-pointer"
                     >
                       Guardar Mensaje Fijado
                     </button>
                   </div>
+
+                  {/* Interruptor de estado del mensaje fijado (antes checkbox oculto tras el título) */}
+                  <label className="flex items-center justify-between gap-3 p-3 bg-zinc-900 border border-zinc-800 rounded-xl cursor-pointer">
+                    <span className={`text-xs font-bold ${pinnedMessageActive ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                      {pinnedMessageActive ? 'ACTIVADO' : 'DESACTIVADO'}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={pinnedMessageActive}
+                      onChange={(e) => setPinnedMessageActive(e.target.checked)}
+                      className="w-5 h-5 rounded border-zinc-700 bg-zinc-900 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                    />
+                  </label>
                 </div>
+                </CollapsibleSection>
 
                 {/* DESTINO DE PUBLICACIÓN: BOT + CANAL / SOLO BOT / SOLO CANAL */}
-                <div className="p-5 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Send className="w-4 h-4 text-amber-400" /> Destino de Publicación de Perfiles
-                    </h4>
-                    <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase tracking-wider">
-                      Parametrización
+                <CollapsibleSection
+                  defaultOpen
+                  title={<><Send className="w-4 h-4 text-amber-400 shrink-0" /> Destino de Publicación de Perfiles</>}
+                  summaryRight={
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase">
+                      {publishDestination === 'bot_and_channel' ? 'Bot + Canal' : publishDestination === 'only_bot' ? 'Solo Bot' : 'Solo Canal'}
                     </span>
-                  </div>
+                  }
+                >
+                <div className="space-y-4">
                   <p className="text-zinc-400 text-xs leading-relaxed">
                     Configura dónde se publicarán los perfiles y fotos al crearlos o actualizarlos desde este panel administrativo:
                   </p>
@@ -1397,6 +1552,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </button>
                   </div>
                 </div>
+                </CollapsibleSection>
 
                 {/* MODO PRIVADO */}
                 <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-3">
@@ -1428,8 +1584,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 </div>
 
+                {/* AJUSTES RÁPIDOS DE TELEGRAM: bot, administradora y respuesta automática */}
+                <CollapsibleSection
+                  title={<><MessageSquare className="w-4 h-4 text-emerald-400 shrink-0" /> Ajustes Rápidos de Telegram</>}
+                  summaryRight={
+                    <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 text-[10px] font-bold uppercase">
+                      3 ajustes
+                    </span>
+                  }
+                >
+                <div className="space-y-5">
+
                 {/* BOT USERNAME */}
-                <form onSubmit={handleSaveSettings} className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-3">
+                <form onSubmit={handleSaveSettings} className="space-y-3">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
                     <Send className="w-4 h-4 text-amber-400" /> Nombre de Usuario del Bot en Telegram
                   </h4>
@@ -1444,13 +1611,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         value={newBotUsername.replace(/^@/, '')}
                         onChange={(e) => setNewBotUsername(e.target.value)}
                         placeholder="Ej. catalogovipscz"
-                        className="w-full pl-7 pr-3 py-2 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:border-amber-500 transition-colors"
+                        className="w-full min-h-11 pl-7 pr-3 py-2 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:border-amber-500 transition-colors"
                       />
                     </div>
                     <button
                       type="submit"
                       disabled={loading}
-                      className="py-2 px-4 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-xl transition-all cursor-pointer shrink-0 disabled:opacity-60"
+                      className="min-h-11 py-2 px-4 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-xl transition-all cursor-pointer shrink-0 disabled:opacity-60"
                     >
                       Guardar
                     </button>
@@ -1458,7 +1625,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </form>
 
                 {/* ADMIN CONTACT USERNAME */}
-                <form onSubmit={handleSaveSettings} className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-3">
+                <form onSubmit={handleSaveSettings} className="space-y-3 pt-4 border-t border-zinc-800/60">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 text-emerald-400" /> Usuario Oficial de la Administradora (Telegram)
                   </h4>
@@ -1473,13 +1640,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         value={adminContactUsername.replace(/^@/, '')}
                         onChange={(e) => setAdminContactUsername(e.target.value)}
                         placeholder="danii001"
-                        className="w-full pl-7 pr-3 py-2 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:border-amber-500 transition-colors"
+                        className="w-full min-h-11 pl-7 pr-3 py-2 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:border-amber-500 transition-colors"
                       />
                     </div>
                     <button
                       type="submit"
                       disabled={loading}
-                      className="py-2 px-4 bg-emerald-500 hover:bg-emerald-600 text-zinc-950 font-bold rounded-xl transition-all cursor-pointer shrink-0 disabled:opacity-60"
+                      className="min-h-11 py-2 px-4 bg-emerald-500 hover:bg-emerald-600 text-zinc-950 font-bold rounded-xl transition-all cursor-pointer shrink-0 disabled:opacity-60"
                     >
                       Guardar
                     </button>
@@ -1487,7 +1654,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </form>
 
                 {/* AUTO REPLY DELAY */}
-                <form onSubmit={handleSaveSettings} className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-3">
+                <form onSubmit={handleSaveSettings} className="space-y-3 pt-4 border-t border-zinc-800/60">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
                     <Clock className="w-4 h-4 text-amber-400" /> Tiempo de Respuesta Automática del Bot
                   </h4>
@@ -1499,21 +1666,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       type="number"
                       min="1"
                       max="1440"
+                      inputMode="numeric"
                       value={autoReplyDelay}
                       onChange={(e) => setAutoReplyDelay(e.target.value)}
                       placeholder="10"
-                      className="w-28 px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:border-amber-500 transition-colors"
+                      className="w-28 min-h-11 px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:border-amber-500 transition-colors"
                     />
                     <span className="text-zinc-400 font-bold">minutos</span>
                     <button
                       type="submit"
                       disabled={loading}
-                      className="ml-auto py-2 px-4 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-xl transition-all cursor-pointer shrink-0 disabled:opacity-60"
+                      className="ml-auto min-h-11 py-2 px-4 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-xl transition-all cursor-pointer shrink-0 disabled:opacity-60"
                     >
                       Guardar
                     </button>
                   </div>
                 </form>
+
+                </div>
+                </CollapsibleSection>
 
                 {/* WEBHOOK */}
                 <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-3">
@@ -1813,6 +1984,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             )}
 
           </div>
+
+          {/* ── Bottom Navigation fija (solo pantallas pequeñas): pulgares siempre al alcance ── */}
+          <nav
+            aria-label="Navegación principal"
+            className="sm:hidden shrink-0 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur px-1 pt-1 pb-safe flex items-stretch justify-between gap-0.5"
+          >
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => tab.id === 'new' ? resetNewForm() : setActiveTab(tab.id)}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
+                className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 min-h-12 rounded-xl py-1.5 cursor-pointer transition-colors ${
+                  activeTab === tab.id ? 'text-amber-400 bg-zinc-900/60' : 'text-zinc-400 active:bg-zinc-800/40'
+                }`}
+              >
+                <span className="relative">
+                  {tab.icon}
+                  {tab.badge !== undefined && tab.badge > 0 && (
+                    <span className={`absolute -top-1.5 -right-2 text-[9px] font-bold px-1 py-0.5 rounded-full leading-none ${
+                      activeTab === tab.id ? 'bg-amber-400/20 text-amber-400' : 'bg-zinc-700 text-zinc-300'
+                    }`}>
+                      {tab.badge}
+                    </span>
+                  )}
+                </span>
+                <span className="text-[9px] font-semibold leading-none">{tab.label}</span>
+              </button>
+            ))}
+          </nav>
         </div>
       </div>
     </div>

@@ -54,3 +54,37 @@ html, body {
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+/* ── Safe areas para Mini Apps / pantallas pequeñas ── */
+.pb-safe {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* ── Toast de notificaciones (reemplaza alerta inline que obligaba a scrollear) ── */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-toast-in {
+  animation: toast-in 0.22s ease-out both;
+}
+
+/* ── Tap targets ≥44px y mejor tactil en pantallas pequenas ── */
+@media (pointer: coarse) {
+  select, input[type="number"], input[type="url"] {
+    min-height: 44px;
+  }
+}
+
+/* Evitar zoom inesperado de iOS en inputs pequenos */
+input, select, textarea {
+  font-size: 16px;
+}
+@media (min-width: 640px) {
+  .text-xs input, .admin-panel input, .admin-panel select, .admin-panel textarea {
+    font-size: 0.8125rem;
+  }
+}

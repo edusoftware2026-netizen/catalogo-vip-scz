@@ -32,15 +32,13 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
     setActivePhotoIdx((prev) => (prev - 1 + photos.length) % photos.length);
   };
 
-  const isAvailable = profile.status === 'disponible';
-
   return (
     <div
       id={`profile-${profile.id}`}
       className="group bg-zinc-900/90 border border-zinc-800/90 hover:border-amber-500/50 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-2xl hover:shadow-amber-500/10 flex flex-col"
     >
       {/* Image Container */}
-      <div className="relative aspect-[3/4] w-full bg-zinc-950 overflow-hidden cursor-pointer" onClick={() => onSelectProfile(profile)}>
+      <div className="relative aspect-3/4 w-full bg-zinc-950 overflow-hidden cursor-pointer" onClick={() => onSelectProfile(profile)}>
         <img
           src={currentPhoto}
           alt={profile.name}
@@ -52,19 +50,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
         <div className="absolute inset-0 bg-linear-to-t from-zinc-950 via-zinc-950/20 to-transparent" />
 
         {/* Top Badges */}
-        <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between gap-2">
-          {/* Status Pill */}
-          <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider backdrop-blur-md shadow-md ${
-              isAvailable
-                ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-300'
-                : 'bg-rose-500/20 border border-rose-500/50 text-rose-300'
-            }`}
-          >
-            <span className={`w-2 h-2 rounded-full ${isAvailable ? 'bg-emerald-400 animate-pulse-status' : 'bg-rose-400'}`} />
-            {isAvailable ? 'Disponible' : 'Ocupada'}
-          </span>
-
+        <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
           {/* Age Pill */}
           <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-zinc-950/80 border border-zinc-700/80 text-amber-300 backdrop-blur-md flex items-center gap-1">
             <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
@@ -111,9 +97,8 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
 
         {/* Bottom Profile Title */}
         <div className="absolute bottom-3 left-3 right-3 z-10 text-white">
-          <h2 className="text-xl font-bold tracking-tight text-white flex items-center justify-between font-serif">
-            <span>{profile.name}</span>
-            <span className="text-xs font-sans text-amber-300/80 font-normal">{profile.zone || 'Santa Cruz'}</span>
+          <h2 className="text-xl font-bold tracking-tight text-white font-serif">
+            {profile.name}
           </h2>
         </div>
       </div>
@@ -122,21 +107,9 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
       <div className="p-4 flex-1 flex flex-col justify-between bg-zinc-900/90">
         
         {/* Description Excerpt */}
-        <p className="text-xs text-zinc-300 line-clamp-2 leading-relaxed mb-3 font-normal">
+        <p className="text-xs text-zinc-300 line-clamp-3 leading-relaxed mb-4 font-normal">
           {profile.description}
         </p>
-
-        {/* Financial Info (Tariff & Commission) */}
-        <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800/80 mb-4 text-xs">
-          <div>
-            <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">TARIFA SERVICIO</span>
-            <span className="text-sm font-extrabold text-amber-400">Bs. {profile.rate_bs}</span>
-          </div>
-          <div className="text-right">
-            <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">COMISIÓN</span>
-            <span className="text-xs font-bold text-zinc-200">Bs. {profile.commission_bs}</span>
-          </div>
-        </div>
 
         {/* Actions */}
         <div className="flex items-center gap-2">
@@ -155,7 +128,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
             className="flex-1 py-2.5 px-3 rounded-xl bg-linear-to-r from-amber-500 via-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-zinc-950 font-extrabold text-xs tracking-wide transition-all shadow-md shadow-amber-500/10 flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Send className="w-3.5 h-3.5" />
-            Solicitar Disponibilidad
+            Solicitar método de Pago
           </button>
         </div>
 

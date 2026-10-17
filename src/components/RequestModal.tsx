@@ -74,13 +74,10 @@ export const RequestModal: React.FC<RequestModalProps> = ({ profile, botUsername
             <Send className="w-6 h-6" />
           </div>
           <h3 className="text-xl font-bold text-white tracking-tight">
-            Solicitar Disponibilidad
+            Solicitar método de Pago
           </h3>
           <p className="text-xs text-amber-400 font-medium mt-1 leading-relaxed">
             Perfil: <span className="font-bold">{profile.name}</span>
-            <span className="text-zinc-400"> · </span>
-            <span className="text-amber-300">Bs. {profile.rate_bs}</span>
-            <span className="text-zinc-500"> / comisión Bs. {profile.commission_bs || 50}</span>
           </p>
         </div>
 
@@ -89,7 +86,7 @@ export const RequestModal: React.FC<RequestModalProps> = ({ profile, botUsername
           <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
           <div>
             <strong className="text-amber-300 block mb-0.5">AVISO DE CONFIDENCIALIDAD:</strong>
-            La coordinación y pago de COMISIÓN se gestionan en privado y directamente con la Administradora vía Telegram.
+            La coordinación y método de pago se gestionan en privado y directamente con la Administradora vía Telegram.
           </div>
         </div>
 
@@ -110,7 +107,7 @@ export const RequestModal: React.FC<RequestModalProps> = ({ profile, botUsername
             </div>
             <h4 className="text-lg font-bold text-white">¡Solicitud Notificada!</h4>
             <p className="text-xs text-zinc-300 leading-relaxed">
-              La Administradora de <strong>Iam Dani Catálogo Santa Cruz</strong> ha sido notificada. También puedes escribirle directamente en Telegram.
+              La Administradora de <strong>Iam Dani</strong> ha sido notificada. También puedes escribirle directamente en Telegram.
             </p>
             <a
               href={webLinkUrl}
@@ -138,7 +135,7 @@ export const RequestModal: React.FC<RequestModalProps> = ({ profile, botUsername
                 rows={4}
                 // ✅ Ya no es required si el usuario tiene contexto Telegram identificado
                 required={!tgUserContext}
-                placeholder="Escribe tu consulta sobre disponibilidad de horario..."
+                placeholder="Escribe tu consulta sobre la coordinación y método de pago..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 className="w-full px-4 py-3 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500/80 resize-none placeholder:text-zinc-500 transition-colors"

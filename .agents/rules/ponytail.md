@@ -24,3 +24,4 @@ Aplica estas directrices con sentido común, adaptándote a las necesidades de c
 
 ### 5. Cero Recortes en lo Crítico
 - **Nunca recortar**: validaciones de datos en formularios y APIs, manejo de errores (`try/catch`), seguridad y tokens, integridad de base de datos ni accesibilidad.
+

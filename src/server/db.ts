@@ -579,15 +579,17 @@ export interface CommissionLog {
   paid_at: string;
 }
 
-export async function addCommissionLog(telegram_user: string, profile_name: string, amount_bs: number = 300, request_id?: string): Promise<CommissionLog> {
+export async function addCommissionLog(telegram_user: string, profile_name: string, amount_bs?: number, request_id?: string): Promise<CommissionLog> {
   const database = await getDb();
+  const defaultComm = Number(getSystemSetting('default_commission_bs')) || 50;
+  const finalAmount = (amount_bs !== undefined && amount_bs !== null) ? Number(amount_bs) : defaultComm;
   const id = `comm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const paid_at = new Date().toISOString();
   const stmt = database.prepare("INSERT INTO commission_logs (id, request_id, telegram_user, profile_name, amount_bs, paid_at) VALUES (?, ?, ?, ?, ?, ?)");
-  stmt.run([id, request_id || null, telegram_user, profile_name, amount_bs, paid_at]);
+  stmt.run([id, request_id || null, telegram_user, profile_name, finalAmount, paid_at]);
   stmt.free();
   saveDb();
-  return { id, request_id, telegram_user, profile_name, amount_bs, paid_at };
+  return { id, request_id, telegram_user, profile_name, amount_bs: finalAmount, paid_at };
 }
 
 export async function getCommissionLogs(): Promise<CommissionLog[]> {

@@ -271,8 +271,8 @@
       "degree": 12
     },
     {
-      "id": "src_server_telegram_calltelegramapi",
-      "label": "callTelegramApi()",
+      "id": "src_types_profile",
+      "label": "Profile",
       "degree": 11
     }
   ],

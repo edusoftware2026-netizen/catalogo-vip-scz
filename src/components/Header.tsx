@@ -31,7 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
           
           {/* Brand Logo & Title */}
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-amber-700 flex items-center justify-center text-zinc-950 font-black text-xl shadow-lg shadow-amber-500/20 tracking-wider font-serif">
+            <div className="w-11 h-11 rounded-2xl bg-linear-to-br from-amber-400 via-amber-500 to-amber-700 flex items-center justify-center text-zinc-950 font-black text-xl shadow-lg shadow-amber-500/20 tracking-wider font-serif">
               ID
             </div>
             <div>
@@ -67,7 +67,7 @@ export const Header: React.FC<HeaderProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               title={`Bot Telegram @${botUsername}`}
-              className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/10"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-linear-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/10"
             >
               <Send className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden sm:inline">Bot de Telegram</span>

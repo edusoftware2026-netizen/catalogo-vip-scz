@@ -20,7 +20,7 @@ export interface Profile {
   priority_order: number;
 }
 
-export type RequestStatus = 'pendiente' | 'confirmado' | 'rechazado' | 'completado';
+export type RequestStatus = 'pendiente' | 'confirmado' | 'rechazado' | 'completado' | 'comision_pagada';
 
 export interface CustomerRequest {
   id: string;

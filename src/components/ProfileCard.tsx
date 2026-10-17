@@ -49,7 +49,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
         />
 
         {/* Gradient Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-t from-zinc-950 via-zinc-950/20 to-transparent" />
 
         {/* Top Badges */}
         <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between gap-2">
@@ -152,7 +152,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
           <button
             onClick={() => onRequestAvailability(profile)}
             id={`btn-request-${profile.id}`}
-            className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 via-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-zinc-950 font-extrabold text-xs tracking-wide transition-all shadow-md shadow-amber-500/10 flex items-center justify-center gap-1.5 cursor-pointer"
+            className="flex-1 py-2.5 px-3 rounded-xl bg-linear-to-r from-amber-500 via-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-zinc-950 font-extrabold text-xs tracking-wide transition-all shadow-md shadow-amber-500/10 flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Send className="w-3.5 h-3.5" />
             Solicitar Disponibilidad

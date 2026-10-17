@@ -63,7 +63,7 @@ export const AgeModal: React.FC<AgeModalProps> = ({ onConfirm }) => {
             id="btn-accept-age"
             className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs tracking-wide transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               accepted
-                ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-zinc-950 shadow-md shadow-amber-500/20'
+                ? 'bg-linear-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-zinc-950 shadow-md shadow-amber-500/20'
                 : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700/50'
             }`}
           >

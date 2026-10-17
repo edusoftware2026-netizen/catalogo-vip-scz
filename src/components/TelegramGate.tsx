@@ -62,7 +62,7 @@ export const TelegramGate: React.FC<TelegramGateProps> = ({ botUsername, onAdmin
             href={botUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-extrabold text-xs tracking-wider uppercase transition-all shadow-lg shadow-sky-600/20 flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-3.5 px-4 rounded-xl bg-linear-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-extrabold text-xs tracking-wider uppercase transition-all shadow-lg shadow-sky-600/20 flex items-center justify-center gap-2 cursor-pointer"
           >
             <Send className="w-4 h-4" />
             Ingresar vía Telegram (@{cleanUsername})

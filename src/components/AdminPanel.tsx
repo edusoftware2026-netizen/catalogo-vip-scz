@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Profile, CustomerRequest, AuditLog, SyncErrorLog } from '../types';
+import { Profile, CustomerRequest, AuditLog, SyncErrorLog, ProfileStatus } from '../types';
 import {
   X,
   Lock,
@@ -55,14 +55,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Edit / New Form State
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string;
+    age: number;
+    zone: string;
+    description: string;
+    rate_bs: number;
+    commission_bs: number;
+    status: ProfileStatus;
+    priority_order: number;
+  }>({
     name: '',
     age: 18,
     zone: 'Equipetrol',
     description: '',
     rate_bs: 450,
     commission_bs: 50,
-    status: 'borrador' as const,
+    status: 'borrador',
     priority_order: 0
   });
 
@@ -709,7 +718,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-zinc-950 font-bold text-xs transition-all shadow-md cursor-pointer disabled:opacity-60"
+                    className="w-full py-3 rounded-xl bg-linear-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-zinc-950 font-bold text-xs transition-all shadow-md cursor-pointer disabled:opacity-60"
                   >
                     {editingProfile ? 'Guardar Cambios' : 'Crear Perfil'}
                   </button>
@@ -754,7 +763,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <div className="space-y-6 text-xs">
 
                 {/* QR COMISIÓN */}
-                <div className="p-5 bg-gradient-to-br from-amber-500/10 via-zinc-950 to-zinc-950 border-2 border-amber-500/40 rounded-2xl space-y-4 shadow-lg shadow-amber-500/5">
+                <div className="p-5 bg-linear-to-br from-amber-500/10 via-zinc-950 to-zinc-950 border-2 border-amber-500/40 rounded-2xl space-y-4 shadow-lg shadow-amber-500/5">
                   <div className="flex items-center justify-between">
                     <h4 className="text-base font-extrabold text-amber-400 flex items-center gap-2">
                       <QrCode className="w-5 h-5" /> Imagen QR de COMISIÓN / Pago
@@ -1061,7 +1070,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                     setLoading(false);
                                   }
                                 }}
-                                className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-zinc-950 font-extrabold shadow-lg shadow-emerald-500/20 transition-all cursor-pointer flex items-center gap-1.5 text-xs"
+                                className="px-3.5 py-2 rounded-xl bg-linear-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-zinc-950 font-extrabold shadow-lg shadow-emerald-500/20 transition-all cursor-pointer flex items-center gap-1.5 text-xs"
                               >
                                 <Banknote className="w-3.5 h-3.5" /> Marcar Comisión Pagada
                               </button>
